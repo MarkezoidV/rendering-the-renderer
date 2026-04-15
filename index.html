@@ -199,6 +199,7 @@ socket.on("rooms", (rooms) => {
 
     rooms.forEach(r => {
         const li = document.createElement("li");
+
         li.textContent = `${r.code} (${r.players}/${r.max})`;
 
         const btn = document.createElement("button");
@@ -209,22 +210,16 @@ socket.on("rooms", (rooms) => {
         } else {
             btn.textContent = "Join";
             btn.onclick = () => {
-    currentRoom = r.code; // 🔥 THIS WAS MISSING
-    socket.emit("join", { name: playerName, room: r.code });
-    show("hostScreen");
-
-
-                setTimeout(() => {
-    document.getElementById("roomCode").textContent = "Room: " + currentRoom;
-}, 0);
-
+                currentRoom = r.code;
+                socket.emit("join", { name: playerName, room: r.code });
+                show("hostScreen");
             };
         }
 
         li.appendChild(btn);
-        li.textContent = p.name + (p.id === hostId ? " 👑" : "") + (p.ready ? " ✅" : " ❌");
         ul.appendChild(li);
     });
+
 });
 
 
