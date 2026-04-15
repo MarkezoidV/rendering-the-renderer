@@ -140,6 +140,7 @@ function addAI() {
 
     socket.emit("join", { name: playerName, room });
     show("hostScreen");
+    document.getElementById("roomCode").textContent = "Join Code: " + room;
 }
 
 
@@ -269,7 +270,11 @@ socket.on("rooms", (rooms) => {
         socket.on("host", (id) => {
             hostId = id;
             updateStartButton();
+            // 🔥 force re-render of room code + UI
+            document.getElementById("roomCode").textContent =
+                (myId === hostId ? "Join Code: " : "Room: ") + currentRoom;
         });
+
 
         socket.on("hostChanged", (id) => {
             hostId = id;

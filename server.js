@@ -21,7 +21,6 @@ function getPublicRooms() {
 
     for (const code in rooms) {
         const game = rooms[code];
-        socket.emit("roomPrivacy", game.isPublic);
 
         if (!game.isPublic) continue; // 👈 hide private rooms
 
@@ -45,7 +44,7 @@ io.on("connection", (socket) => {
     if (!room || !rooms[room]) return;
 
     const game = rooms[room];
-
+    socket.emit("roomPrivacy", game.isPublic);
     if (socket.id !== game.hostId) return;
 
     game.isPublic = !game.isPublic;
