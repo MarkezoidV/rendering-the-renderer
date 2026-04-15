@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Catan Web</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        .screen {
+            display: none;
+        }
+
+        .active {
+            display: block;
+        }
+
+        button {
+            padding: 10px;
+            margin: 10px;
+        }
+        ul {
+    list-style: none;
+    padding: 0;
+}
+
+    </style>
+</head>
+<body>
+
+    <!-- ===================================================== -->
+    <!-- NAME SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="nameScreen" class="screen active">
+        <h1>Enter Name</h1>
+        <input id="nameInput" placeholder="Your Name">
+        <button onclick="setName()">Continue</button>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- MAIN MENU                                             -->
+    <!-- ===================================================== -->
+    <div id="menuScreen" class="screen">
+        <h1>Main Menu</h1>
+        <button onclick="showHost()">Host</button>
+        <button onclick="showJoin()">Join</button>
+        <h2>Available Rooms</h2>
+<ul id="roomList"></ul>
+<button onclick="refreshRooms()">Refresh</button>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- HOST / LOBBY SCREEN                                   -->
+    <!-- ===================================================== -->
+    <div id="hostScreen" class="screen">
+        <h1>Lobby</h1>
+        <button onclick="toggleReady()">Toggle Ready</button>
+        <button onclick="startGame()">Start Game</button>
+        <button onclick="addAI()">Add AI</button>
+        <button onclick="leaveLobby()">Leave</button>
+        <button onclick="togglePublic()">Toggle Public</button>
+<p id="privacyStatus"></p>
+
+        <h2 id="roomCode"></h2>
+        <ul id="players"></ul>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- GAME SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="gameScreen" class="screen">
+        <h1>Game Started!</h1>
+        <p>This is where your Catan game will go 👀</p>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- JOIN SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="joinScreen" class="screen">
+        <h1>Join Game</h1>
+        <input id="roomInput" placeholder="Enter Room Code">
+        <button onclick="joinGame()">Join</button>
+        <button onclick="leaveLobby()">Leave</button>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- CLIENT SCRIPT                                         -->
+    <!-- ===================================================== -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // =====================================================
+        //  Socket.io Setup & State
+        // =====================================================
+        const socket = io();
+        let playerName = "";
+        let myId = null;
+        let hostId = null;
+        let currentRoom = "";
+
+
+        // =====================================================
+        //  Screen Switching
+        // =====================================================
+        function show(screen) {
+            document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+            document.getElementById(screen).classList.add("active");
+        }
+function togglePublic() {
+    socket.emit("togglePublic");
+}
+
+socket.on("roomPrivacy", (isPublic) => {
+    document.getElementById("privacyStatus").textContent =
+        isPublic ? "Public Room" : "Private Room";
+});
+
+        // =====================================================
+        //  Name Setup
+        // =====================================================
+        function setName() {
+            const input = document.getElementById("nameInput").value.trim();
+            playerName = input || "Player";
+            show("menuScreen");
+            refreshRooms();
+        }
+
+function addAI() {
+    socket.emit("addAI");
+}
+
+        // =====================================================
+        //  Host / Join Logic
+        // =====================================================
+        function showHost() {
+    const room = Math.random().toString(36).substring(2, 6);
+
+    currentRoom = room; // ✅ ADD THIS
+
+    socket.emit("join", { name: playerName, room });
+    show("hostScreen");
+}
+
+
+        function showJoin() {
+            show("joinScreen");
+        }
+
+        function joinGame() {
+    const room = document.getElementById("roomInput").value || "default";
+
+    currentRoom = room; // ✅ ADD THIS
+
+    socket.emit("join", { name: playerName, room });
+    show("hostScreen");
+}
+
+
+        // =====================================================
+        //  Ready System
+        // =====================================================
+        function toggleReady() {
+            socket.emit("toggleReady");
+        }
+
+        function startGame() {
+            socket.emit("startGame");
+        }
+        function getUniqueName(baseName, players) {
+            let count = 1;
+           let newName = baseName;
+
+            while (players.some(p => p.name === newName)) {
+                count++;
+                newName = baseName + count;
+           }
+
+            return newName;
+        }
+        function leaveLobby() {
+    socket.emit("leaveRoom");
+    currentRoom = "";
+    show("menuScreen");
+    refreshRooms(); // 🔥 ADD THIS
+}
+
+
+        
+
+
+function refreshRooms() {
+    socket.emit("getRooms");
+}
+
+socket.on("rooms", (rooms) => {
+    const ul = document.getElementById("roomList");
+    ul.innerHTML = "";
+
+    rooms.forEach(r => {
+        const li = document.createElement("li");
+        li.textContent = `${r.code} (${r.players}/${r.max})`;
+
+        const btn = document.createElement("button");
+
+        if (r.players >= r.max) {
+            btn.textContent = "Full";
+            btn.disabled = true;
+        } else {
+            btn.textContent = "Join";
+            btn.onclick = () => {
+    currentRoom = r.code; // 🔥 THIS WAS MISSING
+    socket.emit("join", { name: playerName, room: r.code });
+    show("hostScreen");
+
+
+                setTimeout(() => {
+    document.getElementById("roomCode").textContent = "Room: " + currentRoom;
+}, 0);
+
+            };
+        }
+
+        li.appendChild(btn);
+        li.textContent = p.name + (p.id === hostId ? " 👑" : "") + (p.ready ? " ✅" : " ❌");
+        ul.appendChild(li);
+    });
+});
+
+
+
+        // =====================================================
+        //  Socket.io Events
+        // =====================================================
+        socket.on("players", (list) => {
+            document.getElementById("roomCode").textContent =
+    (myId === hostId ? "Join Code: " : "Room: ") + currentRoom;
+    const ul = document.getElementById("players");
+    ul.innerHTML = "";
+
+    list.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = p.name + (p.ready ? " ✅" : " ❌");
+
+        // 👇 add remove button if YOU are host and it's not you
+        if (myId === hostId && p.id !== myId) {
+            const btn = document.createElement("button");
+            btn.textContent = "Kick";
+            btn.onclick = () => socket.emit("kickPlayer", p.id);
+            li.appendChild(btn);
+        }
+
+        ul.appendChild(li);
+    });
+
+    updateStartButton();
+});
+
+
+
+        socket.on("joinError", (msg) => {
+            alert(msg);
+            show("menuScreen"); // send them back
+        });
+
+        socket.on("startGame", () => {
+            show("gameScreen");
+        });
+
+        socket.on("connect", () => {
+            myId = socket.id;
+        });
+
+        socket.on("host", (id) => {
+            hostId = id;
+            updateStartButton();
+        });
+
+        socket.on("hostChanged", (id) => {
+            hostId = id;
+            if (id === myId) {
+                alert("You are now the host!");
+            } else {
+                alert("Host changed.");
+            }
+            updateStartButton();
+        });
+
+        // =====================================================
+        //  UI Updates
+        // =====================================================
+        function updateStartButton() {
+    const startBtn = document.querySelector("button[onclick='startGame()']");
+    const aiBtn = document.querySelector("button[onclick='addAI()']");
+    const toggleBtn = document.querySelector("button[onclick='togglePublic()']");
+
+    const isHost = myId === hostId;
+
+    if (startBtn) startBtn.style.display = isHost ? "inline-block" : "none";
+    if (aiBtn) aiBtn.style.display = isHost ? "inline-block" : "none";
+    if (toggleBtn) toggleBtn.style.display = isHost ? "inline-block" : "none";
+}
+
+    </script>
+
+</body>
+</html>
