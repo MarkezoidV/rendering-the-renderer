@@ -3,6 +3,24 @@
 <head>
     <title>Catan Web</title>
     <style>
+        #board {
+    display: grid;
+    grid-template-columns: repeat(5, 60px);
+    gap: 5px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.tile {
+    width: 60px;
+    height: 60px;
+    background: lightgray;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
         body {
             font-family: Arial, sans-serif;
             text-align: center;
@@ -60,7 +78,20 @@
         <button onclick="addAI()">Add AI</button>
         <button onclick="leaveLobby()">Leave</button>
         <button onclick="togglePublic()">Toggle Public</button>
+        <h3>Game Settings</h3>
+
+        <button onclick="setBoardMode('random')">Random Board</button>
+        <button onclick="setBoardMode('manual')">Manual Board</button>
+
+        <button onclick="setTurnMode('random')">Random Order</button>
+        <button onclick="setTurnMode('join')">Join Order</button>
+
+        <button onclick="setVictoryPoints(10)">10 Points</button>
+        <button onclick="setVictoryPoints(12)">12 Points</button>
+
 <p id="privacyStatus"></p>
+<p id="settingsStatus"></p>
+
 
         <h2 id="roomCode"></h2>
         <ul id="players"></ul>
@@ -72,6 +103,11 @@
     <div id="gameScreen" class="screen">
         <h1>Game Started!</h1>
         <p>This is where your Catan game will go 👀</p>
+        <button id="endTurnBtn" onclick="nextTurn()">End Turn</button>
+        <div id="board">
+
+        </div>
+
     </div>
 
     <!-- ===================================================== -->
@@ -110,11 +146,31 @@
 function togglePublic() {
     socket.emit("togglePublic");
 }
+function setBoardMode(mode) {
+    socket.emit("setBoardMode", mode);
+}
+
+socket.on("settingsUpdate", (settings) => {
+    document.getElementById("settingsStatus").textContent =
+        `Board: ${settings.boardMode || "random"} | ` +
+        `Turns: ${settings.turnMode || "join"} | ` +
+        `VP: ${settings.victoryPoints || 10}`;
+});
+
+
+
 
 socket.on("roomPrivacy", (isPublic) => {
     document.getElementById("privacyStatus").textContent =
         isPublic ? "Public Room" : "Private Room";
 });
+function setTurnMode(mode) {
+    socket.emit("setTurnMode", mode);
+}
+
+function setVictoryPoints(points) {
+    socket.emit("setVictoryPoints", points);
+}
 
         // =====================================================
         //  Name Setup
@@ -148,6 +204,7 @@ function addAI() {
             show("joinScreen");
         }
 
+
         function joinGame() {
     const room = document.getElementById("roomInput").value || "default";
 
@@ -164,6 +221,24 @@ function addAI() {
         function toggleReady() {
             socket.emit("toggleReady");
         }
+        function renderBoard(board) {
+    const boardDiv = document.getElementById("board");
+    boardDiv.innerHTML = "";
+
+    board.forEach((tile, i) => {
+        const div = document.createElement("div");
+        div.className = "tile";
+
+        div.textContent = tile?.type || "?";
+
+        div.onclick = () => {
+            setTile(i);
+        };
+
+        boardDiv.appendChild(div);
+    });
+}
+
 
         function startGame() {
             socket.emit("startGame");
@@ -179,6 +254,12 @@ function addAI() {
 
             return newName;
         }
+        const types = ["wood", "brick", "sheep", "wheat", "ore"];
+
+function setTile(index) {
+    socket.emit("cycleTile", index);
+}
+
         function leaveLobby() {
     socket.emit("leaveRoom");
     currentRoom = "";
@@ -189,10 +270,23 @@ function addAI() {
 
         
 
+socket.on("boardUpdate", (board) => {
+    renderBoard(board);
+});
 
-function refreshRooms() {
-    socket.emit("getRooms");
-}
+socket.on("turnUpdate", (turnIndex) => {
+    const players = document.querySelectorAll("#players li");
+
+    players.forEach((li, i) => {
+        li.style.fontWeight = (i === turnIndex) ? "bold" : "normal";
+    });
+
+    const isMyTurn = players[turnIndex] && players[turnIndex].textContent.includes(playerName);
+
+    document.getElementById("endTurnBtn").style.display =
+        isMyTurn ? "inline-block" : "none";
+});
+
 
 socket.on("rooms", (rooms) => {
     const ul = document.getElementById("roomList");
@@ -259,12 +353,16 @@ socket.on("rooms", (rooms) => {
             show("menuScreen"); // send them back
         });
 
-        socket.on("startGame", () => {
-            show("gameScreen");
-        });
+        socket.on("startGame", ({ board }) => {
+    show("gameScreen");
+    if (board) renderBoard(board);
+});
+
 
         socket.on("connect", () => {
             myId = socket.id;
+            document.getElementById("settingsStatus").textContent =
+            "Board: random | Turns: join | VP: 10";
         });
 
         socket.on("host", (id) => {
@@ -289,6 +387,14 @@ socket.on("rooms", (rooms) => {
         // =====================================================
         //  UI Updates
         // =====================================================
+        function nextTurn() {
+    socket.emit("nextTurn");
+}
+function refreshRooms() {
+    socket.emit("getRooms");
+}
+
+
         function updateStartButton() {
     const startBtn = document.querySelector("button[onclick='startGame()']");
     const aiBtn = document.querySelector("button[onclick='addAI()']");

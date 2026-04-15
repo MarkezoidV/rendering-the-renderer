@@ -16,6 +16,14 @@ function getUniqueName(baseName, players) {
 
     return newName;
 }
+function generateBoard() {
+    const types = ["wood", "brick", "sheep", "wheat", "ore"];
+
+    return Array.from({ length: 19 }, () => ({
+        type: types[Math.floor(Math.random() * types.length)]
+    }));
+}
+
 function getPublicRooms() {
     const list = [];
 
@@ -69,7 +77,16 @@ socket.on("getRooms", () => {
             rooms[room] = {
                 players: [],
                 hostId: null,
-                isPublic: true
+                isPublic: true,
+                started: false,
+                turnIndex: 0,
+                board: null,
+                // 🔥 new
+                settings: {
+                    boardMode: "random",
+    turnMode: "join",
+    victoryPoints: 10
+                },
             };
         }
 
@@ -92,11 +109,54 @@ socket.on("getRooms", () => {
 
         // ✅ NOW this works
         socket.emit("roomPrivacy", game.isPublic);
-
+        socket.emit("settingsUpdate", game.settings);
         io.to(room).emit("players", game.players);
         io.to(room).emit("host", game.hostId);
         io.emit("rooms", getPublicRooms());
     });
+
+    socket.on("setBoardMode", (mode) => {
+    
+
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+if (game.started) return;
+    if (socket.id !== game.hostId) return;
+
+    game.settings.boardMode = mode;
+if (mode === "manual" && !game.board) {
+    game.board = Array.from({ length: 19 }, () => ({
+    type: null
+}));
+
+}
+
+io.to(room).emit("settingsUpdate", game.settings);
+// 🔥 THIS is the important part
+if (mode === "manual") {
+    io.to(room).emit("boardUpdate", game.board);
+}
+io.emit("rooms", getPublicRooms());
+
+    
+});
+
+socket.on("nextTurn", () => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+
+    // ✅ ONLY CURRENT PLAYER can end turn
+    if (socket.id !== game.players[game.turnIndex].id) return;
+
+    game.turnIndex = (game.turnIndex + 1) % game.players.length;
+
+    io.to(room).emit("turnUpdate", game.turnIndex);
+});
+
 
 socket.on("kickPlayer", (playerId) => {
     const room = socket.room;
@@ -143,6 +203,44 @@ socket.on("leaveRoom", () => {
     }
 });
 
+socket.on("updateTile", ({ index, type }) => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+
+    if (socket.id !== game.hostId) return;
+    if (game.settings.boardMode !== "manual") return;
+
+    if (!game.board) {
+        game.board = Array.from({ length: 19 }, () => ({
+    type: null
+}));
+
+    }
+
+    game.board[index] = {
+        ...game.board[index],
+        type
+    };
+
+    io.to(room).emit("boardUpdate", game.board);
+});
+socket.on("setTurnMode", (mode) => {
+  
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+    if (socket.id !== game.hostId) return;
+    if (game.started) return;
+
+    game.settings.turnMode = mode;
+
+    io.to(room).emit("settingsUpdate", game.settings);
+    io.emit("rooms", getPublicRooms());
+
+});
 
     socket.on("addAI", () => {
     const room = socket.room;
@@ -165,6 +263,8 @@ socket.on("leaveRoom", () => {
     });
 
     io.to(room).emit("players", game.players);
+    io.emit("rooms", getPublicRooms());
+
 });
 
 
@@ -188,20 +288,89 @@ socket.on("leaveRoom", () => {
     // START GAME
     // =========================
     socket.on("startGame", () => {
-        const room = socket.room;
-        if (!room || !rooms[room]) return;
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
 
-        const game = rooms[room];
+    const game = rooms[room];
 
-        if (
-            socket.id === game.hostId &&
-            game.players.length >= 2 &&
-            game.players.every(p => p.ready)
-        ) {
-            io.to(room).emit("startGame");
-        }
+    if (
+        socket.id === game.hostId &&
+        game.players.length >= 2 &&
+        game.players.every(p => p.ready)
+    ) {
         game.started = true;
-    });
+if (game.settings.turnMode === "random") {
+    game.players.sort(() => Math.random() - 0.5);
+}
+
+        if (game.settings.boardMode === "random") {
+            game.board = generateBoard();
+        }
+
+        // 👇 manual mode: board should already exist
+        io.to(room).emit("startGame", {
+            board: game.board,
+            settings: game.settings
+        });
+    }
+});
+socket.on("cycleTile", (index) => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+
+    if (socket.id !== game.hostId) return;
+    if (game.settings.boardMode !== "manual") return;
+
+    if (!game.board) {
+        game.board = Array.from({ length: 19 }, () => ({
+    type: null
+}));
+
+    }
+
+    const types = ["wood", "brick", "sheep", "wheat", "ore"];
+
+    let current = game.board[index]?.type;
+    let nextIndex = (types.indexOf(current) + 1) % types.length;
+
+    game.board[index] = {
+        type: types[nextIndex]
+    };
+
+    io.to(room).emit("boardUpdate", game.board);
+});
+
+socket.on("setVictoryPoints", (points) => {
+    
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+    if (socket.id !== game.hostId) return;
+    if (game.started) return;
+    game.settings.victoryPoints = points;
+
+    io.to(room).emit("settingsUpdate", game.settings);
+    io.emit("rooms", getPublicRooms());
+
+});
+socket.on("resetLobby", () => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+    if (socket.id !== game.hostId) return;
+
+    game.board = null;
+    game.started = false;
+    game.turnIndex = 0;
+
+    game.players.forEach(p => p.ready = false);
+
+    io.to(room).emit("players", game.players);
+});
 
     // =========================
     // DISCONNECT
@@ -237,6 +406,8 @@ socket.on("leaveRoom", () => {
         io.emit("rooms", getPublicRooms());
     });
 });
+
+
 
 app.use(express.static(__dirname));
 
