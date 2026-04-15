@@ -44,7 +44,6 @@ io.on("connection", (socket) => {
     if (!room || !rooms[room]) return;
 
     const game = rooms[room];
-    socket.emit("roomPrivacy", game.isPublic);
     if (socket.id !== game.hostId) return;
 
     game.isPublic = !game.isPublic;
@@ -60,46 +59,45 @@ socket.on("getRooms", () => {
     // JOIN
     // =========================
     socket.on("join", ({ name, room }) => {
+
+        if (rooms[room] && rooms[room].players.length >= MAX_PLAYERS) {
+            socket.emit("joinError", "Room is full");
+            return;
+        }
+
+        if (!rooms[room]) {
+            rooms[room] = {
+                players: [],
+                hostId: null,
+                isPublic: true
+            };
+        }
+
+        const game = rooms[room]; // ✅ NOW it's safe
+
+        socket.room = room;
+
+        name = name && name.trim() ? name : "Player";
+        name = getUniqueName(name, game.players);
+
+        if (!game.hostId) game.hostId = socket.id;
+
+        game.players.push({
+            id: socket.id,
+            name: name,
+            ready: false
+        });
+
+        socket.join(room);
+
+        // ✅ NOW this works
         socket.emit("roomPrivacy", game.isPublic);
-    // ❗ if room exists AND is full → reject BEFORE doing anything
-    if (rooms[room] && rooms[room].players.length >= MAX_PLAYERS) {
-        socket.emit("joinError", "Room is full");
-        return;
-    }
 
-    // create room if it doesn't exist
-    if (!rooms[room]) {
-        rooms[room] = {
-    players: [],
-    hostId: null,
-    isPublic: true // default
-};
-    }
-
-    const game = rooms[room];
-    socket.room = room;
-
-    if (game.players.some(p => p.id === socket.id)) return;
-
-    name = name && name.trim() ? name : "Player";
-
-    name = getUniqueName(name, game.players);
-
-    if (!game.hostId) game.hostId = socket.id;
-
-    game.players.push({
-        id: socket.id,
-        name: name,
-        ready: false
+        io.to(room).emit("players", game.players);
+        io.to(room).emit("host", game.hostId);
+        io.emit("rooms", getPublicRooms());
     });
 
-    socket.join(room);
-
-    io.to(room).emit("players", game.players);
-    io.to(room).emit("host", game.hostId);
-    io.emit("rooms", getPublicRooms());
-
-});
 socket.on("kickPlayer", (playerId) => {
     const room = socket.room;
     if (!room || !rooms[room]) return;
