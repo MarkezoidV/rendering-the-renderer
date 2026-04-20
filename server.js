@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const http = require("http").createServer(app);
 const io = require("socket.io")(http);
+let editMode = "type"; // "type" | "number"
 
 let rooms = {};
 const MAX_PLAYERS = 4;
@@ -17,11 +18,13 @@ function getUniqueName(baseName, players) {
     return newName;
 }
 function generateBoard() {
-    const types = ["wood", "brick", "sheep", "wheat", "ore"];
+    const types = ["wood", "brick", "sheep", "wheat", "ore","desert"];
 
     return Array.from({ length: 19 }, () => ({
-        type: types[Math.floor(Math.random() * types.length)]
-    }));
+    type: types[Math.floor(Math.random() * types.length)],
+    number: null
+}));
+
 }
 
 function getPublicRooms() {
@@ -42,6 +45,27 @@ function getPublicRooms() {
     return list;
 }
 
+function getOuterEdges(hex, hexSet) {
+    const edges = [];
+
+    directions.forEach((dir, i) => {
+        const neighbor = {
+            q: hex.q + dir.q,
+            r: hex.r + dir.r
+        };
+
+        const exists = hexSet.some(h => h.q === neighbor.q && h.r === neighbor.r);
+
+        if (!exists) {
+            edges.push({
+                hex,
+                side: i // 0–5 which edge
+            });
+        }
+    });
+
+    return edges;
+}
 
 
 
@@ -74,21 +98,33 @@ socket.on("getRooms", () => {
         }
 
         if (!rooms[room]) {
-            rooms[room] = {
-                players: [],
-                hostId: null,
-                isPublic: true,
-                started: false,
-                turnIndex: 0,
-                board: null,
-                // 🔥 new
-                settings: {
-                    boardMode: "random",
-    turnMode: "join",
-    victoryPoints: 10
-                },
-            };
+    rooms[room] = {
+        players: [],
+        hostId: null,
+        isPublic: true,
+        started: false,
+
+        turnIndex: 0,
+
+        // 🔥 BOARD (tiles)
+        board: null, 
+        // each tile will be:
+        // { type: "wood", number: 8 }
+
+        // 🔥 PORTS (edges, not tiles)
+        ports: [], 
+        // each port:
+        // { q: 2, r: -1, side: 0, type: "wood" }
+
+        // 🔥 SETTINGS
+        settings: {
+            boardMode: "random",   // "random" | "manual"
+            turnMode: "join",      // "join" | "random"
+            victoryPoints: 10
         }
+    };
+}
+
 
         const game = rooms[room]; // ✅ NOW it's safe
 
@@ -128,7 +164,8 @@ if (game.started) return;
     game.settings.boardMode = mode;
 if (mode === "manual" && !game.board) {
     game.board = Array.from({ length: 19 }, () => ({
-    type: null
+    type: null,
+    number: null
 }));
 
 }
@@ -141,6 +178,24 @@ if (mode === "manual") {
 io.emit("rooms", getPublicRooms());
 
     
+});
+socket.on("setPort", ({ q, r, side, type }) => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+    if (socket.id !== game.hostId) return;
+
+    // prevent duplicates
+    const exists = game.ports.some(p =>
+        p.q === q && p.r === r && p.side === side
+    );
+
+    if (exists) return;
+
+    game.ports.push({ q, r, side, type });
+
+    io.to(room).emit("portsUpdate", game.ports);
 });
 
 socket.on("nextTurn", () => {
@@ -213,9 +268,11 @@ socket.on("updateTile", ({ index, type }) => {
     if (game.settings.boardMode !== "manual") return;
 
     if (!game.board) {
-        game.board = Array.from({ length: 19 }, () => ({
-    type: null
+       game.board = Array.from({ length: 19 }, () => ({
+    type: null,
+    number: null
 }));
+
 
     }
 
@@ -226,6 +283,16 @@ socket.on("updateTile", ({ index, type }) => {
 
     io.to(room).emit("boardUpdate", game.board);
 });
+socket.on("requestBoard", () => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+    if (game.board) {
+        socket.emit("boardUpdate", game.board);
+    }
+});
+
 socket.on("setTurnMode", (mode) => {
   
     const room = socket.room;
@@ -325,19 +392,23 @@ socket.on("cycleTile", (index) => {
 
     if (!game.board) {
         game.board = Array.from({ length: 19 }, () => ({
-    type: null
+    type: null,
+    number: null
+
 }));
 
     }
 
-    const types = ["wood", "brick", "sheep", "wheat", "ore"];
+    const types = ["wood", "brick", "sheep", "wheat", "ore","desert"];
 
     let current = game.board[index]?.type;
     let nextIndex = (types.indexOf(current) + 1) % types.length;
 
     game.board[index] = {
-        type: types[nextIndex]
-    };
+    ...game.board[index], // 🔥 keep number
+    type: types[nextIndex]
+};
+
 
     io.to(room).emit("boardUpdate", game.board);
 });
@@ -370,6 +441,24 @@ socket.on("resetLobby", () => {
     game.players.forEach(p => p.ready = false);
 
     io.to(room).emit("players", game.players);
+});
+socket.on("setNumber", ({ index, number }) => {
+    const room = socket.room;
+    if (!room || !rooms[room]) return;
+
+    const game = rooms[room];
+
+    if (socket.id !== game.hostId) return;
+    if (game.settings.boardMode !== "manual") return;
+
+    if (!game.board) return;
+
+    game.board[index] = {
+        ...game.board[index],
+        number
+    };
+
+    io.to(room).emit("boardUpdate", game.board);
 });
 
     // =========================

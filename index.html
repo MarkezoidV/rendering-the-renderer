@@ -3,23 +3,73 @@
 <head>
     <title>Catan Web</title>
     <style>
-        #board {
-    display: grid;
-    grid-template-columns: repeat(5, 60px);
-    gap: 5px;
-    justify-content: center;
-    margin-top: 20px;
+        #privacyStatus, #settingsStatus {
+    margin: 5px 0;
+    font-weight: bold;
 }
+
+#boardWrapper {
+    display: flex;
+    justify-content: flex-start; /* left */
+    align-items: flex-end;       /* bottom */
+    height: 300px;               /* gives space to push down */
+}
+
+
+
+
+.row {
+    display: flex;
+    gap: 5px;
+    margin-top: -16px; /* tighter hex stacking */
+}
+
+
+
+
+
+
+
+
+.selected {
+    background-color: #4CAF50;
+    color: white;
+}
+#lobbyBoard {
+    position: relative;
+    width: 400px;
+    height: 350px;
+}
+
+
+
 
 .tile {
     width: 60px;
-    height: 60px;
+    height: 56px;
+
     background: lightgray;
+    border: 2px solid #555;
+
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+
+    font-size: 12px;
+    text-transform: capitalize;
+
+    clip-path: polygon(
+        50% 0%,
+        90% 25%,
+        90% 75%,
+        50% 100%,
+        10% 75%,
+        10% 25%
+    );
 }
+
+
+
 
         body {
             font-family: Arial, sans-serif;
@@ -80,14 +130,15 @@
         <button onclick="togglePublic()">Toggle Public</button>
         <h3>Game Settings</h3>
 
-        <button onclick="setBoardMode('random')">Random Board</button>
-        <button onclick="setBoardMode('manual')">Manual Board</button>
+        <button id="boardRandom" onclick="setBoardMode('random')">Random Board</button>
+<button id="boardManual" onclick="setBoardMode('manual')">Manual Board</button>
 
-        <button onclick="setTurnMode('random')">Random Order</button>
-        <button onclick="setTurnMode('join')">Join Order</button>
+<button id="turnRandom" onclick="setTurnMode('random')">Random Order</button>
+<button id="turnJoin" onclick="setTurnMode('join')">Join Order</button>
 
-        <button onclick="setVictoryPoints(10)">10 Points</button>
-        <button onclick="setVictoryPoints(12)">12 Points</button>
+<button id="vp10" onclick="setVictoryPoints(10)">10 Points</button>
+<button id="vp12" onclick="setVictoryPoints(12)">12 Points</button>
+
 
 <p id="privacyStatus"></p>
 <p id="settingsStatus"></p>
@@ -95,6 +146,15 @@
 
         <h2 id="roomCode"></h2>
         <ul id="players"></ul>
+        <div id="boardWrapper">
+            <button onclick="editMode='type'">Edit Type</button>
+<button onclick="editMode='number'">Edit Number</button>
+<button onclick="editMode='port'">Edit Ports</button>
+
+            <div id="lobbyBoard"></div>
+        </div>
+
+
     </div>
 
     <!-- ===================================================== -->
@@ -104,9 +164,6 @@
         <h1>Game Started!</h1>
         <p>This is where your Catan game will go 👀</p>
         <button id="endTurnBtn" onclick="nextTurn()">End Turn</button>
-        <div id="board">
-
-        </div>
 
     </div>
 
@@ -134,6 +191,8 @@
         let myId = null;
         let hostId = null;
         let currentRoom = "";
+        let editMode = "type"; // "type" | "number" | "port"
+
 
 
         // =====================================================
@@ -155,15 +214,71 @@ socket.on("settingsUpdate", (settings) => {
         `Board: ${settings.boardMode || "random"} | ` +
         `Turns: ${settings.turnMode || "join"} | ` +
         `VP: ${settings.victoryPoints || 10}`;
+
+    const boardDiv = document.getElementById("lobbyBoard");
+
+    if (settings.boardMode === "manual") {
+        boardDiv.style.display = "flex";
+        socket.emit("requestBoard"); // 👈 add this
+    } else {
+        boardDiv.style.display = "none";
+    }
+    document.getElementById("boardRandom").classList.toggle("selected", settings.boardMode === "random");
+    document.getElementById("boardManual").classList.toggle("selected", settings.boardMode === "manual");
+
+    document.getElementById("turnRandom").classList.toggle("selected", settings.turnMode === "random");
+    document.getElementById("turnJoin").classList.toggle("selected", settings.turnMode === "join");
+
+    document.getElementById("vp10").classList.toggle("selected", settings.victoryPoints === 10);
+    document.getElementById("vp12").classList.toggle("selected", settings.victoryPoints === 12);
+
 });
 
 
+
+function getEdges(hex, hexes) {
+    const edges = [];
+
+    directions.forEach((dir, i) => {
+        const neighbor = {
+            q: hex.q + dir.q,
+            r: hex.r + dir.r
+        };
+
+        const exists = hexes.some(h => h.q === neighbor.q && h.r === neighbor.r);
+
+        if (!exists) {
+            edges.push({
+                q: hex.q,
+                r: hex.r,
+                side: i
+            });
+        }
+    });
+
+    return edges;
+}
 
 
 socket.on("roomPrivacy", (isPublic) => {
     document.getElementById("privacyStatus").textContent =
         isPublic ? "Public Room" : "Private Room";
 });
+function isEdge(hex) {
+    return Math.abs(hex.q) === 2 ||
+           Math.abs(hex.r) === 2 ||
+           Math.abs(-hex.q - hex.r) === 2;
+}
+
+const directions = [
+    { q: 1, r: 0 },
+    { q: 1, r: -1 },
+    { q: 0, r: -1 },
+    { q: -1, r: 0 },
+    { q: -1, r: 1 },
+    { q: 0, r: 1 }
+];
+
 function setTurnMode(mode) {
     socket.emit("setTurnMode", mode);
 }
@@ -199,6 +314,146 @@ function addAI() {
     document.getElementById("roomCode").textContent = "Join Code: " + room;
 }
 
+function renderLobbyBoard(board) {
+    const boardDiv = document.getElementById("lobbyBoard");
+    boardDiv.innerHTML = "";
+
+    const hexes = [];
+
+    for (let q = -2; q <= 2; q++) {
+        for (let r = -2; r <= 2; r++) {
+            const s = -q - r;
+            if (Math.abs(s) <= 2) {
+                hexes.push({ q, r });
+            }
+        }
+    }
+
+    hexes.forEach((hex, index) => {
+    const { x, y } = hexToPixel(hex.q, hex.r);
+
+    const tile = board[index];
+
+    const div = document.createElement("div");
+    div.className = "tile";
+
+    const centerX = boardDiv.clientWidth / 2;
+    const centerY = boardDiv.clientHeight / 2;
+
+    div.style.position = "absolute";
+    div.style.left = `${centerX + x}px`;
+    div.style.top = `${centerY + y}px`;
+    div.style.transform = "translate(-50%, -50%)";
+
+    div.style.background = colors[tile?.type] || "lightgray";
+
+    div.innerHTML = `
+        <div>${tile?.type || "?"}</div>
+        <div style="font-weight:bold">${tile?.number || ""}</div>
+    `;
+
+    // tile click
+    if (myId === hostId) {
+        div.onclick = () => {
+            if (editMode === "type") {
+                socket.emit("cycleTile", index);
+            } else if (editMode === "number") {
+                const num = prompt("Enter number (2-12):");
+                if (num) {
+                    socket.emit("setNumber", {
+                        index,
+                        number: parseInt(num)
+                    });
+                }
+            }
+        };
+    }
+
+    boardDiv.appendChild(div);
+
+    // ✅ FIX: edges INSIDE loop
+    const edges = getEdges(hex, hexes);
+
+edges.forEach(edge => {
+    const edgeDiv = document.createElement("div"); // ✅ correct name
+    edgeDiv.className = "edge"; // optional (not a port yet)
+
+    edgeDiv.style.position = "absolute";
+    edgeDiv.style.width = "12px";
+    edgeDiv.style.height = "12px";
+    edgeDiv.style.background = "blue";
+    edgeDiv.style.borderRadius = "50%";
+    edgeDiv.style.cursor = "pointer";
+
+    const offset = getEdgeOffset(edge.side);
+
+    edgeDiv.style.left = `${centerX + x + offset.x}px`;
+    edgeDiv.style.top = `${centerY + y + offset.y}px`;
+    edgeDiv.style.transform = "translate(-50%, -50%)";
+
+    edgeDiv.onclick = () => {
+        if (editMode === "port") {
+            socket.emit("setPort", {
+                q: edge.q,
+                r: edge.r,
+                side: edge.side,
+                type: "3:1"
+            });
+        }
+    };
+
+    boardDiv.appendChild(edgeDiv);
+});
+
+});
+
+
+}
+function getEdgeOffset(side) {
+    const d = 40;
+
+    const offsets = [
+        { x: d, y: 0 },
+        { x: d/2, y: -d },
+        { x: -d/2, y: -d },
+        { x: -d, y: 0 },
+        { x: -d/2, y: d },
+        { x: d/2, y: d }
+    ];
+
+    return offsets[side];
+}
+socket.on("portsUpdate", (ports) => {
+    const lobbyBoard = document.getElementById("lobbyBoard");
+
+    // ✅ CLEAR OLD PORTS FIRST
+    lobbyBoard.querySelectorAll(".port").forEach(p => p.remove());
+
+    ports.forEach(p => {
+        const { x, y } = hexToPixel(p.q, p.r);
+        const offset = getEdgeOffset(p.side);
+
+        const portDiv = document.createElement("div");
+        portDiv.className = "port"; // ✅ here
+
+        portDiv.style.position = "absolute";
+        portDiv.style.width = "14px";
+        portDiv.style.height = "14px";
+        portDiv.style.background = "red";
+        portDiv.style.borderRadius = "50%";
+
+        const centerX = lobbyBoard.clientWidth / 2;
+        const centerY = lobbyBoard.clientHeight / 2;
+
+        portDiv.style.left = `${centerX + x + offset.x}px`;
+        portDiv.style.top = `${centerY + y + offset.y}px`;
+        portDiv.style.transform = "translate(-50%, -50%)";
+
+        lobbyBoard.appendChild(portDiv);
+    });
+});
+
+
 
         function showJoin() {
             show("joinScreen");
@@ -215,6 +470,9 @@ function addAI() {
 }
 
 
+
+
+
         // =====================================================
         //  Ready System
         // =====================================================
@@ -229,7 +487,12 @@ function addAI() {
         const div = document.createElement("div");
         div.className = "tile";
 
-        div.textContent = tile?.type || "?";
+div.style.background = colors[tile?.type] || "lightgray";
+        div.innerHTML = `
+    <div>${tile?.type || "?"}</div>
+    <div>${tile?.number || ""}</div>
+`;
+
 
         div.onclick = () => {
             setTile(i);
@@ -254,7 +517,16 @@ function addAI() {
 
             return newName;
         }
-        const types = ["wood", "brick", "sheep", "wheat", "ore"];
+        const types = ["wood", "brick", "sheep", "wheat", "ore","desert"];
+const colors = {
+    wood: "#2e8b57",
+    brick: "#b22222",
+    sheep: "#7fff00",
+    wheat: "#daa520",
+    ore: "#808080",
+    desert: "#deb887"
+};
+
 
 function setTile(index) {
     socket.emit("cycleTile", index);
@@ -271,7 +543,7 @@ function setTile(index) {
         
 
 socket.on("boardUpdate", (board) => {
-    renderBoard(board);
+    renderLobbyBoard(board);
 });
 
 socket.on("turnUpdate", (turnIndex) => {
@@ -393,6 +665,14 @@ socket.on("rooms", (rooms) => {
 function refreshRooms() {
     socket.emit("getRooms");
 }
+function hexToPixel(q, r) {
+    const size = 35; // controls spacing
+
+    const x = size * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r);
+    const y = size * (3/2 * r);
+
+    return { x, y };
+}
 
 
         function updateStartButton() {
@@ -405,7 +685,22 @@ function refreshRooms() {
     if (startBtn) startBtn.style.display = isHost ? "inline-block" : "none";
     if (aiBtn) aiBtn.style.display = isHost ? "inline-block" : "none";
     if (toggleBtn) toggleBtn.style.display = isHost ? "inline-block" : "none";
+
+    // 🔥 ADD THESE
+    const settingButtons = [
+        "boardRandom", "boardManual",
+        "turnRandom", "turnJoin",
+        "vp10", "vp12"
+    ];
+
+    settingButtons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.style.display = isHost ? "inline-block" : "none";
+        }
+    });
 }
+
 
     </script>
 
