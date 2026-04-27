@@ -1,1 +1,754 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Catan Web</title>
+    <style>
+        #privacyStatus, #settingsStatus {
+    margin: 5px 0;
+    font-weight: bold;
+}
 
+#boardWrapper {
+    display: flex;
+    justify-content: flex-start; /* left */
+    align-items: flex-end;       /* bottom */
+    height: 300px;               /* gives space to push down */
+}
+
+
+
+
+.row {
+    display: flex;
+    gap: 5px;
+    margin-top: -16px; /* tighter hex stacking */
+}
+
+
+
+
+
+
+.selected {
+    background-color: #4CAF50;
+    color: white;
+}
+#lobbyBoard {
+    position: relative;
+    width: 400px;
+    height: 350px;
+}
+
+
+
+
+.tile {
+    width: 60px;
+    height: 56px;
+
+    background: lightgray;
+    border: 2px solid black;   /* 👈 STRONG border */
+
+    color: black;
+
+    display: flex;
+    flex-direction: column;    /* 👈 stack text */
+    align-items: center;
+    justify-content: center;
+
+    font-size: 12px;
+
+    clip-path: polygon(
+        50% 0%,
+        90% 25%,
+        90% 75%,
+        50% 100%,
+        10% 75%,
+        10% 25%
+    );
+}
+
+
+
+
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        .screen {
+            display: none;
+        }
+
+        .active {
+            display: block;
+        }
+
+        button {
+            padding: 10px;
+            margin: 10px;
+        }
+        ul {
+    list-style: none;
+    padding: 0;
+}
+
+    </style>
+</head>
+<body>
+
+    <!-- ===================================================== -->
+    <!-- NAME SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="nameScreen" class="screen active">
+        <h1>Enter Name</h1>
+        <input id="nameInput" placeholder="Your Name" onkeypress="handleNameKey(event)">
+        <button onclick="setName()">Continue</button>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- MAIN MENU                                             -->
+    <!-- ===================================================== -->
+    <div id="menuScreen" class="screen">
+        <h1>Main Menu</h1>
+        <button onclick="showHost()">Host</button>
+        <button onclick="showJoin()">Join</button>
+        <h2>Available Rooms</h2>
+<ul id="roomList"></ul>
+<button onclick="refreshRooms()">Refresh</button>
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- HOST / LOBBY SCREEN                                   -->
+    <!-- ===================================================== -->
+    <div id="hostScreen" class="screen">
+        <h1>Lobby</h1>
+        <button onclick="toggleReady()">Toggle Ready</button>
+        <button onclick="startGame()">Start Game</button>
+        <button onclick="addAI()">Add AI</button>
+        <button onclick="leaveLobby()">Leave</button>
+        <button onclick="togglePublic()">Toggle Public</button>
+        <h3>Game Settings</h3>
+
+        <button id="boardRandom" onclick="setBoardMode('random')">Random Board</button>
+<button id="boardManual" onclick="setBoardMode('manual')">Manual Board</button>
+
+<button id="turnRandom" onclick="setTurnMode('random')">Random Order</button>
+<button id="turnJoin" onclick="setTurnMode('join')">Join Order</button>
+
+<button id="vp10" onclick="setVictoryPoints(10)">10 Points</button>
+<button id="vp12" onclick="setVictoryPoints(12)">12 Points</button>
+
+
+<p id="privacyStatus"></p>
+<p id="settingsStatus"></p>
+
+
+        <h2 id="roomCode"></h2>
+        <ul id="players"></ul>
+        <div id="boardWrapper">
+        <button onclick="setEditMode('type')" id="btnType">Edit Type</button>
+<button onclick="setEditMode('number')" id="btnNumber">Edit Number</button>
+<button onclick="setEditMode('port')" id="btnPort">Edit Ports</button>
+<button onclick="validateSetup()">Check Setup</button>
+
+
+            <div id="lobbyBoard"></div>
+        </div>
+
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- GAME SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="gameScreen" class="screen">
+        <h1>Game Started!</h1>
+        <p>This is where your Catan game will go 👀</p>
+        <button id="endTurnBtn" onclick="nextTurn()">End Turn</button>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- JOIN SCREEN                                           -->
+    <!-- ===================================================== -->
+    <div id="joinScreen" class="screen">
+        <h1>Join Game</h1>
+        <input id="roomInput" placeholder="Enter Room Code">
+        <button onclick="joinGame()">Join</button>
+        <button onclick="leaveLobby()">Leave</button>
+
+    </div>
+
+    <!-- ===================================================== -->
+    <!-- CLIENT SCRIPT                                         -->
+    <!-- ===================================================== -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // =====================================================
+        // Constants and Global Variables
+        // =====================================================
+        const socket = io();
+        const directions = [
+            { q: 1, r: 0 },
+            { q: 1, r: -1 },
+            { q: 0, r: -1 },
+            { q: -1, r: 0 },
+            { q: -1, r: 1 },
+            { q: 0, r: 1 }
+        ];
+        const types = ["wood", "brick", "sheep", "wheat", "ore", "desert"];
+        const colors = {
+            wood: "#2e8b57",
+            brick: "#b22222",
+            sheep: "#7fff00",
+            wheat: "#daa520",
+            ore: "#808080",
+            desert: "#deb887"
+        };
+        const portColors = {
+            "3:1": "#ffffff",
+            wood: "#2e8b57",
+            brick: "#b22222",
+            sheep: "#7fff00",
+            wheat: "#daa520",
+            ore: "#808080"
+        };
+        const dots = {
+            2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
+            8: 5, 9: 4, 10: 3, 11: 2, 12: 1
+        };
+
+        let playerName = "";
+        let myId = null;
+        let hostId = null;
+        let currentRoom = "";
+        let editMode = "type"; // "type" | "number" | "port"
+        let gamePorts = [];
+
+        // =====================================================
+        // Utility Functions
+        // =====================================================
+        function hexToPixel(q, r) {
+            const size = 35; // controls spacing
+            const x = size * (Math.sqrt(3) * q + Math.sqrt(3) / 2 * r);
+            const y = size * (3 / 2 * r);
+            return { x, y };
+        }
+
+        function getEdgeOffset(side) {
+            const d = 40;
+            const offsets = [
+                { x: d, y: 0 },
+                { x: d / 2, y: -d },
+                { x: -d / 2, y: -d },
+                { x: -d, y: 0 },
+                { x: -d / 2, y: d },
+                { x: d / 2, y: d }
+            ];
+            return offsets[side];
+        }
+
+        function isEdge(hex) {
+            return Math.abs(hex.q) === 2 ||
+                   Math.abs(hex.r) === 2 ||
+                   Math.abs(-hex.q - hex.r) === 2;
+        }
+
+        function getEdges(hex, hexes) {
+            const edges = [];
+            directions.forEach((dir, i) => {
+                const neighbor = {
+                    q: hex.q + dir.q,
+                    r: hex.r + dir.r
+                };
+                const exists = hexes.some(h => h.q === neighbor.q && h.r === neighbor.r);
+                if (!exists) {
+                    edges.push({
+                        q: hex.q,
+                        r: hex.r,
+                        side: i
+                    });
+                }
+            });
+            return edges;
+        }
+
+        function getUniqueName(baseName, players) {
+            let count = 1;
+            let newName = baseName;
+            while (players.some(p => p.name === newName)) {
+                count++;
+                newName = baseName + count;
+            }
+            return newName;
+        }
+
+        // =====================================================
+        // Screen Management
+        // =====================================================
+        function show(screen) {
+            document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+            document.getElementById(screen).classList.add("active");
+        }
+
+        function handleNameKey(e) {
+            if (e.key === "Enter") {
+                setName();
+            }
+        }
+
+        // =====================================================
+        // Game Setup Functions
+        // =====================================================
+        function setName() {
+            const input = document.getElementById("nameInput").value.trim();
+            playerName = input || "Player";
+            show("menuScreen");
+            refreshRooms();
+        }
+
+        function showHost() {
+            const room = Math.random().toString(36).substring(2, 6);
+            currentRoom = room;
+            socket.emit("join", { name: playerName, room });
+            show("hostScreen");
+            document.getElementById("roomCode").textContent = "Join Code: " + room;
+            socket.emit("requestBoard");
+        }
+
+        function showJoin() {
+            show("joinScreen");
+        }
+
+        function joinGame() {
+            const room = document.getElementById("roomInput").value || "default";
+            currentRoom = room;
+            socket.emit("join", { name: playerName, room });
+            show("hostScreen");
+        }
+
+        function leaveLobby() {
+            socket.emit("leaveRoom");
+            currentRoom = "";
+            show("menuScreen");
+            refreshRooms();
+        }
+
+        // =====================================================
+        // Lobby and Game Functions
+        // =====================================================
+        function toggleReady() {
+            socket.emit("toggleReady");
+        }
+
+        function startGame() {
+            socket.emit("startGame");
+        }
+
+        function addAI() {
+            socket.emit("addAI");
+        }
+
+        function togglePublic() {
+            socket.emit("togglePublic");
+        }
+
+        function setBoardMode(mode) {
+            socket.emit("setBoardMode", mode);
+        }
+
+        function setTurnMode(mode) {
+            socket.emit("setTurnMode", mode);
+        }
+
+        function setVictoryPoints(points) {
+            socket.emit("setVictoryPoints", points);
+        }
+
+        function setEditMode(mode) {
+            editMode = mode;
+            document.getElementById("btnType").classList.toggle("selected", mode === "type");
+            document.getElementById("btnNumber").classList.toggle("selected", mode === "number");
+            document.getElementById("btnPort").classList.toggle("selected", mode === "port");
+        }
+
+        function setTile(index) {
+            socket.emit("cycleTile", index);
+        }
+
+        function nextTurn() {
+            socket.emit("nextTurn");
+        }
+
+        function refreshRooms() {
+            socket.emit("getRooms");
+        }
+
+        function validateSetup() {
+            socket.emit("validateSetup");
+        }
+
+        // =====================================================
+        // Board Rendering Functions
+        // =====================================================
+        function renderLobbyBoard(board) {
+            if (!board) return;
+            const boardDiv = document.getElementById("lobbyBoard");
+            boardDiv.innerHTML = "";
+
+            // Remove old edges first
+            boardDiv.querySelectorAll(".edge").forEach(e => e.remove());
+
+
+
+            const hexes = [];
+            for (let q = -2; q <= 2; q++) {
+                for (let r = -2; r <= 2; r++) {
+                    const s = -q - r;
+                    if (Math.abs(s) <= 2) {
+                        hexes.push({ q, r });
+                    }
+                }
+            }
+
+            hexes.forEach((hex, index) => {
+                const { x, y } = hexToPixel(hex.q, hex.r);
+                const tile = board[index];
+                const div = document.createElement("div");
+                div.className = "tile";
+
+                const centerX = 200;
+                const centerY = 150;
+
+                div.style.position = "absolute";
+                div.style.left = `${centerX + x}px`;
+                div.style.top = `${centerY + y}px`;
+                div.style.transform = "translate(-50%, -50%)";
+                div.style.background = colors[tile?.type] || "lightgray";
+
+                const count = dots[tile?.number] || 0;
+                const isHot = tile?.number === 6 || tile?.number === 8;
+
+                div.innerHTML = `
+                    <div>${tile?.type || "?"}</div>
+                    <div style="font-weight:bold; color:${isHot ? 'red' : 'black'}">
+                        ${tile?.number || ""}
+                    </div>
+                    <div>${"•".repeat(count)}</div>
+                `;
+
+                // Tile click for host editing
+                if (myId === hostId) {
+                    div.onclick = () => {
+                        if (editMode === "type") {
+                            socket.emit("cycleTile", index);
+                        } else if (editMode === "number") {
+                            const numbers = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
+                            let current = tile?.number;
+                            let nextIndex = (numbers.indexOf(current) + 1) % numbers.length;
+                            let nextNumber = numbers[nextIndex];
+
+                            if (tile?.type === "desert") {
+                                alert("Desert cannot have a number.");
+                                return;
+                            }
+
+                            socket.emit("setNumber", {
+                                index,
+                                number: nextNumber
+                            });
+                        }
+                    };
+                }
+
+                boardDiv.appendChild(div);
+
+                if (!isEdge(hex)) return;
+
+                const edges = getEdges(hex, hexes);
+                edges.forEach(edge => {
+                    const edgeDiv = document.createElement("div");
+                    edgeDiv.dataset.q = edge.q;
+                    edgeDiv.dataset.r = edge.r;
+                    edgeDiv.dataset.side = edge.side;
+                    edgeDiv.className = "edge";
+
+                    edgeDiv.style.position = "absolute";
+                    edgeDiv.style.width = "12px";
+                    edgeDiv.style.height = "12px";
+                    edgeDiv.style.background = "blue";
+                    edgeDiv.style.borderRadius = "50%";
+                    edgeDiv.style.cursor = "pointer";
+
+                    const offset = getEdgeOffset(edge.side);
+                    edgeDiv.style.left = `${centerX + x + offset.x}px`;
+                    edgeDiv.style.top = `${centerY + y + offset.y}px`;
+                    edgeDiv.style.transform = "translate(-50%, -50%)";
+
+                    edgeDiv.onmouseenter = () => {
+                        if (editMode === "port") {
+                            edgeDiv.style.background = "yellow";
+                        }
+                    };
+
+                    edgeDiv.onmouseleave = () => {
+                        edgeDiv.style.background = "blue";
+                    };
+
+                    edgeDiv.onclick = () => {
+                        if (editMode === "port") {
+                            const existing = gamePorts.find(p =>
+                                p.q === edge.q && p.r === edge.r && p.side === edge.side
+                            );
+                            const portTypes = ["3:1", "wood", "brick", "sheep", "wheat", "ore"];
+                            let nextType = portTypes[0];
+                            if (existing) {
+                                const i = portTypes.indexOf(existing.type);
+                                nextType = portTypes[(i + 1) % portTypes.length];
+                            }
+                            socket.emit("setPort", {
+                                q: edge.q,
+                                r: edge.r,
+                                side: edge.side,
+                                type: nextType
+                            });
+                        }
+                    };
+
+                    boardDiv.appendChild(edgeDiv);
+                });
+            });
+            renderPorts(gamePorts);
+
+        }
+
+        function renderBoard(board) {
+            console.log("Rendering board:", board);
+            const boardDiv = document.getElementById("board");
+            boardDiv.innerHTML = "";
+
+            board.forEach((tile, i) => {
+                const div = document.createElement("div");
+                div.className = "tile";
+                div.style.background = colors[tile?.type] || "lightgray";
+                div.innerHTML = `
+                    <div>${tile?.type || "?"}</div>
+                    <div>${tile?.number || ""}</div>
+                `;
+                div.onclick = () => {
+                    setTile(i);
+                };
+                boardDiv.appendChild(div);
+            });
+        }
+
+        // =====================================================
+        // Socket Event Handlers
+        // =====================================================
+        socket.on("connect", () => {
+            myId = socket.id;
+            document.getElementById("settingsStatus").textContent =
+                "Board: random | Turns: join | VP: 10";
+        });
+
+        socket.on("host", (id) => {
+            hostId = id;
+            updateStartButton();
+            document.getElementById("roomCode").textContent =
+                (myId === hostId ? "Join Code: " : "Room: ") + currentRoom;
+        });
+
+        socket.on("hostChanged", (id) => {
+            hostId = id;
+            if (id === myId) {
+                alert("You are now the host!");
+            } else {
+                alert("Host changed.");
+            }
+            updateStartButton();
+        });
+
+        socket.on("players", (list) => {
+            document.getElementById("roomCode").textContent =
+                (myId === hostId ? "Join Code: " : "Room: ") + currentRoom;
+            const ul = document.getElementById("players");
+            ul.innerHTML = "";
+
+            list.forEach(p => {
+                const li = document.createElement("li");
+                li.textContent = p.name + (p.ready ? " ✅" : " ❌");
+
+                if (myId === hostId && p.id !== myId) {
+                    const btn = document.createElement("button");
+                    btn.textContent = "Kick";
+                    btn.onclick = () => socket.emit("kickPlayer", p.id);
+                    li.appendChild(btn);
+                }
+
+                ul.appendChild(li);
+            });
+
+            updateStartButton();
+        });
+
+        socket.on("joinError", (msg) => {
+            alert(msg);
+            show("menuScreen");
+        });
+
+        socket.on("startGame", ({ board, ports }) => {
+            show("gameScreen");
+            if (board) renderBoard(board);
+            gamePorts = ports;
+        });
+
+        socket.on("boardUpdate", (board) => {
+            renderLobbyBoard(board);
+        });
+
+        socket.on("settingsUpdate", (settings) => {
+            document.getElementById("settingsStatus").textContent =
+                `Board: ${settings.boardMode || "random"} | ` +
+                `Turns: ${settings.turnMode || "join"} | ` +
+                `VP: ${settings.victoryPoints || 10}`;
+
+            const boardDiv = document.getElementById("lobbyBoard");
+            if (settings.boardMode === "manual") {
+                boardDiv.style.display = "block";
+                socket.emit("requestBoard");
+            } else {
+                boardDiv.style.display = "none";
+            }
+
+            document.getElementById("boardRandom").classList.toggle("selected", settings.boardMode === "random");
+            document.getElementById("boardManual").classList.toggle("selected", settings.boardMode === "manual");
+            document.getElementById("turnRandom").classList.toggle("selected", settings.turnMode === "random");
+            document.getElementById("turnJoin").classList.toggle("selected", settings.turnMode === "join");
+            document.getElementById("vp10").classList.toggle("selected", settings.victoryPoints === 10);
+            document.getElementById("vp12").classList.toggle("selected", settings.victoryPoints === 12);
+        });
+
+        socket.on("roomPrivacy", (isPublic) => {
+            document.getElementById("privacyStatus").textContent =
+                isPublic ? "Public Room" : "Private Room";
+        });
+
+        socket.on("portsUpdate", (ports) => {
+    gamePorts = ports;
+    renderPorts(gamePorts);
+});
+
+        socket.on("turnUpdate", (turnIndex) => {
+            const players = document.querySelectorAll("#players li");
+            players.forEach((li, i) => {
+                li.style.fontWeight = (i === turnIndex) ? "bold" : "normal";
+            });
+
+            const isMyTurn = players[turnIndex] && players[turnIndex].textContent.includes(playerName);
+            document.getElementById("endTurnBtn").style.display =
+                isMyTurn ? "inline-block" : "none";
+        });
+
+        socket.on("setupValid", () => alert("Setup is valid ✅"));
+        socket.on("setupError", msg => alert(msg));
+
+        socket.on("rooms", (rooms) => {
+            const ul = document.getElementById("roomList");
+            ul.innerHTML = "";
+
+            rooms.forEach(r => {
+                const li = document.createElement("li");
+                li.textContent = `${r.code} (${r.players}/${r.max})`;
+
+                const btn = document.createElement("button");
+                if (r.players >= r.max) {
+                    btn.textContent = "Full";
+                    btn.disabled = true;
+                } else {
+                    btn.textContent = "Join";
+                    btn.onclick = () => {
+                        currentRoom = r.code;
+                        socket.emit("join", { name: playerName, room: r.code });
+                        show("hostScreen");
+                    };
+                }
+
+                li.appendChild(btn);
+                ul.appendChild(li);
+            });
+        });
+function renderPorts(ports) {
+    const lobbyBoard = document.getElementById("lobbyBoard");
+
+    lobbyBoard.querySelectorAll(".port").forEach(p => p.remove());
+
+    const centerX = 200;
+    const centerY = 150;
+
+    ports.forEach(p => {
+        const { x, y } = hexToPixel(p.q, p.r);
+        const offset = getEdgeOffset(p.side);
+
+        const portDiv = document.createElement("div");
+        portDiv.className = "port";
+
+        portDiv.style.position = "absolute";
+        portDiv.style.left = `${centerX + x + offset.x}px`;
+        portDiv.style.top = `${centerY + y + offset.y}px`;
+        portDiv.style.transform = "translate(-50%, -50%)";
+        portDiv.style.background = portColors[p.type] || "red";
+
+        portDiv.style.width = "24px";
+        portDiv.style.height = "16px";
+        portDiv.style.borderRadius = "4px";
+        portDiv.style.fontSize = "8px";
+        portDiv.style.display = "flex";
+        portDiv.style.alignItems = "center";
+        portDiv.style.justifyContent = "center";
+        portDiv.textContent = p.type;
+
+        lobbyBoard.appendChild(portDiv);
+    });
+}
+
+        // =====================================================
+        // UI Update Functions
+        // =====================================================
+        function updateStartButton() {
+  const isHost = myId === hostId;
+
+  const hostButtons = [
+    "button[onclick='startGame()']",
+    "button[onclick='addAI()']",
+    "button[onclick='togglePublic()']",
+    "#boardRandom",
+    "#boardManual",
+    "#turnRandom",
+    "#turnJoin",
+    "#vp10",
+    "#vp12",
+    "#btnType",
+    "#btnNumber",
+    "#btnPort",
+    "button[onclick='validateSetup()']"
+  ];
+
+  hostButtons.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el) el.style.display = isHost ? "inline-block" : "none";
+  });
+
+  const board = document.getElementById("lobbyBoard");
+  if (board) {
+    board.style.display = isHost ? "block" : "none";
+  }
+}
+
+
+        // Initialize edit mode
+        setEditMode("type");
+    </script>
+
+</body>
+</html>
