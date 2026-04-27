@@ -2,6 +2,9 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
+const GameRoom = require("./game/game");
+const Board = require("./game/board");
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -10,184 +13,318 @@ app.use(express.static("public"));
 
 const rooms = {};
 
-function makeRoom(code) {
-  rooms[code] = {
-    code,
-    hostId: null,
-    players: [],
-    public: false,
-    settings: {
-      boardMode: "random",
-      turnMode: "join",
-      victoryPoints: 10
-    },
-    started: false
-  };
+// =====================================
+// HELPERS
+// =====================================
+
+function getRoom(code) {
+    return rooms[code];
 }
 
-function getPublicRooms() {
-  return Object.values(rooms)
-    .filter(r => r.public && !r.started)
-    .map(r => ({
-      code: r.code,
-      players: r.players.length,
-      max: 4
-    }));
+function makeRoom(code) {
+    const room = new GameRoom(code);
+
+    room.board = Board.createRandomBoard();
+    room.ports = Board.createPorts();
+
+    rooms[code] = room;
+    return room;
+}
+
+function getOrCreateRoom(code) {
+    return rooms[code] || makeRoom(code);
 }
 
 function emitRoom(room) {
-  io.to(room.code).emit("players", room.players);
-  io.to(room.code).emit("host", room.hostId);
-  io.to(room.code).emit("settingsUpdate", room.settings);
-  io.to(room.code).emit("roomPrivacy", room.public);
+    io.to(room.code).emit("players", room.players);
+    io.to(room.code).emit("host", room.hostId);
+    io.to(room.code).emit("settingsUpdate", room.settings);
+    io.to(room.code).emit("roomPrivacy", room.public);
 }
 
-function assignHost(room) {
-  const human = room.players.find(p => !p.ai);
-  room.hostId = human ? human.id : null;
-  io.to(room.code).emit("hostChanged", room.hostId);
+function emitBoard(room) {
+    io.to(room.code).emit("boardUpdate", room.board);
+    io.to(room.code).emit("portsUpdate", room.ports);
 }
+
+function emitTurn(room) {
+    io.to(room.code).emit("turnUpdate", room.turn);
+}
+
+function deleteRoomIfDead(room) {
+    if (!room.hasHumans()) {
+        delete rooms[room.code];
+        return true;
+    }
+    return false;
+}
+
+function getPublicRooms() {
+    return Object.values(rooms)
+        .filter(r => r.public && !r.started)
+        .map(r => ({
+            code: r.code,
+            players: r.players.length,
+            max: 4
+        }));
+}
+
+function requireRoom(socket) {
+    return getRoom(socket.roomCode);
+}
+
+function requireHost(socket, room) {
+    return room && room.hostId === socket.id;
+}
+
+// =====================================
+// SOCKET
+// =====================================
 
 io.on("connection", socket => {
-  socket.on("join", ({ name, room }) => {
-    if (!rooms[room]) makeRoom(room);
 
-    const data = rooms[room];
+    // ==============================
+    // JOIN
+    // ==============================
+    socket.on("join", ({ name, room }) => {
+        const data = getOrCreateRoom(room);
 
-    if (data.players.length >= 4) {
-      socket.emit("joinError", "Room full");
-      return;
-    }
+        if (data.isFull()) {
+            socket.emit("joinError", "Room full");
+            return;
+        }
 
-    socket.join(room);
-    socket.roomCode = room;
+        socket.join(room);
+        socket.roomCode = room;
 
-    data.players.push({
-      id: socket.id,
-      name,
-      ready: false,
-      ai: false
+        data.addPlayer(socket.id, name || "Player");
+
+        emitRoom(data);
+        emitBoard(data);
     });
 
-    if (!data.hostId) data.hostId = socket.id;
+    // ==============================
+    // LEAVE
+    // ==============================
+    socket.on("leaveRoom", () => {
+        const room = requireRoom(socket);
+        if (!room) return;
 
-    emitRoom(data);
-  });
+        room.removePlayer(socket.id);
 
-  socket.on("toggleReady", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
+        if (deleteRoomIfDead(room)) return;
 
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    player.ready = !player.ready;
-    emitRoom(room);
-  });
-
-  socket.on("addAI", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-    if (room.hostId !== socket.id) return;
-    if (room.players.length >= 4) return;
-
-    room.players.push({
-      id: "ai_" + Date.now(),
-      name: "AI Bot",
-      ready: true,
-      ai: true
+        emitRoom(room);
     });
 
-    emitRoom(room);
-  });
+    socket.on("disconnect", () => {
+        const room = requireRoom(socket);
+        if (!room) return;
 
-  socket.on("togglePublic", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-    if (room.hostId !== socket.id) return;
+        room.removePlayer(socket.id);
 
-    room.public = !room.public;
-    emitRoom(room);
-  });
+        if (deleteRoomIfDead(room)) return;
 
-  socket.on("setBoardMode", mode => {
-    const room = rooms[socket.roomCode];
-    if (!room || room.hostId !== socket.id) return;
-    room.settings.boardMode = mode;
-    emitRoom(room);
-  });
-
-  socket.on("setTurnMode", mode => {
-    const room = rooms[socket.roomCode];
-    if (!room || room.hostId !== socket.id) return;
-    room.settings.turnMode = mode;
-    emitRoom(room);
-  });
-
-  socket.on("setVictoryPoints", points => {
-    const room = rooms[socket.roomCode];
-    if (!room || room.hostId !== socket.id) return;
-    room.settings.victoryPoints = points;
-    emitRoom(room);
-  });
-
-  socket.on("getRooms", () => {
-    socket.emit("rooms", getPublicRooms());
-  });
-
-  socket.on("startGame", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
-    if (room.hostId !== socket.id) return;
-
-    const readyCount = room.players.filter(p => p.ready).length;
-
-    if (readyCount < 2) return;
-
-    room.started = true;
-
-    io.to(room.code).emit("startGame", {
-      board: [],
-      ports: []
+        emitRoom(room);
     });
-  });
 
-  socket.on("leaveRoom", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
+    // ==============================
+    // READY
+    // ==============================
+    socket.on("toggleReady", () => {
+        const room = requireRoom(socket);
+        if (!room) return;
 
-    room.players = room.players.filter(p => p.id !== socket.id);
+        room.toggleReady(socket.id);
+        emitRoom(room);
+    });
 
-    if (room.hostId === socket.id) assignHost(room);
+    // ==============================
+    // HOST ACTIONS
+    // ==============================
+    socket.on("addAI", () => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+        if (room.isFull()) return;
 
-    const humansLeft = room.players.filter(p => !p.ai).length;
+        room.addAI();
+        emitRoom(room);
+    });
 
-    if (humansLeft === 0) {
-    delete rooms[room.code];
-    return;
-}
+    socket.on("kickPlayer", id => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
 
+        room.kickPlayer(id);
 
-    emitRoom(room);
-  });
+        if (deleteRoomIfDead(room)) return;
 
-  socket.on("disconnect", () => {
-    const room = rooms[socket.roomCode];
-    if (!room) return;
+        emitRoom(room);
+    });
 
-    room.players = room.players.filter(p => p.id !== socket.id);
+    socket.on("togglePublic", () => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
 
-    if (room.hostId === socket.id) assignHost(room);
+        room.togglePublic();
+        emitRoom(room);
+    });
 
-    if (room.players.length === 0) {
-      delete rooms[room.code];
-      return;
-    }
+    socket.on("setBoardMode", mode => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
 
-    emitRoom(room);
-  });
+        room.setBoardMode(mode);
+        emitRoom(room);
+    });
+
+    socket.on("setTurnMode", mode => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+
+        room.setTurnMode(mode);
+        emitRoom(room);
+    });
+
+    socket.on("setVictoryPoints", points => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+
+        room.setVictoryPoints(points);
+        emitRoom(room);
+    });
+
+    // ==============================
+    // ROOM LIST
+    // ==============================
+    socket.on("getRooms", () => {
+        socket.emit("rooms", getPublicRooms());
+    });
+
+    // ==============================
+    // BOARD
+    // ==============================
+    socket.on("requestBoard", () => {
+        const room = requireRoom(socket);
+        if (!room) return;
+
+        emitBoard(room);
+    });
+
+    socket.on("cycleTile", index => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+        if (room.settings.boardMode !== "manual") return;
+
+        room.board = Board.cycleTile(room.board, index);
+
+        emitBoard(room);
+    });
+
+    socket.on("setNumber", ({ index, number }) => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+        if (room.settings.boardMode !== "manual") return;
+
+        room.board = Board.setNumber(room.board, index, number);
+
+        emitBoard(room);
+    });
+
+    socket.on("setPort", ({ side, type }) => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+        if (room.settings.boardMode !== "manual") return;
+
+        room.ports = Board.setPort(room.ports, side, type);
+
+        emitBoard(room);
+    });
+
+    socket.on("validateSetup", () => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+
+        const result = Board.validateBoard(room.board);
+
+        if (result.ok) {
+            socket.emit("setupValid");
+        } else {
+            socket.emit("setupError", result.error);
+        }
+    });
+
+    // ==============================
+    // START GAME
+    // ==============================
+    socket.on("startGame", () => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+
+        if (!room.canStart()) {
+            socket.emit("setupError", "Need at least 2 ready players.");
+            return;
+        }
+
+        if (room.settings.boardMode === "random") {
+            room.board = Board.createRandomBoard();
+            room.ports = Board.createPorts();
+        }
+
+        const valid = Board.validateBoard(room.board);
+
+        if (!valid.ok) {
+            socket.emit("setupError", valid.error);
+            return;
+        }
+
+        room.start();
+
+        io.to(room.code).emit("startGame", {
+            board: room.board,
+            ports: room.ports
+        });
+
+        emitTurn(room);
+    });
+
+    // ==============================
+    // TURNS
+    // ==============================
+    socket.on("nextTurn", () => {
+        const room = requireRoom(socket);
+        if (!room || !room.started) return;
+
+        const current = room.currentPlayer();
+        if (!current) return;
+        if (current.id !== socket.id) return;
+
+        room.nextTurn();
+        emitTurn(room);
+    });
+
+    // ==============================
+    // RESET GAME
+    // ==============================
+    socket.on("resetGame", () => {
+        const room = requireRoom(socket);
+        if (!requireHost(socket, room)) return;
+
+        room.reset();
+
+        room.board = Board.createRandomBoard();
+        room.ports = Board.createPorts();
+
+        emitRoom(room);
+        emitBoard(room);
+    });
+
 });
 
+// =====================================
+// START
+// =====================================
+
 server.listen(3000, () => {
-  console.log("Server running on port 3000");
+    console.log("Server running on port 3000");
 });
