@@ -171,12 +171,20 @@ io.on("connection", socket => {
     });
 
     socket.on("setBoardMode", mode => {
-        const room = requireRoom(socket);
-        if (!requireHost(socket, room)) return;
+    const room = requireRoom(socket);
+    if (!requireHost(socket, room)) return;
 
-        room.setBoardMode(mode);
-        emitRoom(room);
-    });
+    room.setBoardMode(mode);
+
+    if (mode === "random") {
+        room.board = Board.createRandomBoard();
+        room.ports = Board.createPorts();
+        emitBoard(room);
+    }
+
+    emitRoom(room);
+});
+
 
     socket.on("setTurnMode", mode => {
         const room = requireRoom(socket);
