@@ -29,6 +29,21 @@
     gap: 5px;
     margin-top: -16px; /* tighter hex stacking */
 }
+.portBtn{
+    width:52px;
+    height:52px;
+    border:none;
+    border-radius:50%;
+    background:white;
+    font-size:26px;
+    cursor:pointer;
+    box-shadow:0 4px 10px rgba(0,0,0,.25);
+    transition:.15s;
+}
+
+.portBtn:hover{
+    transform:translate(-50%,-50%) scale(1.08);
+}
 
 
 
@@ -195,6 +210,7 @@
         // Constants and Global Variables
         // =====================================================
         const socket = io();
+        let lastBoard = [];
         const directions = [
             { q: 1, r: 0 },
             { q: 1, r: -1 },
@@ -212,6 +228,15 @@
             ore: "#808080",
             desert: "#deb887"
         };
+        const portEmoji = {
+  "3:1": "⚓",
+  wood: "🌲",
+  brick: "🧱",
+  sheep: "🐑",
+  wheat: "🌾",
+  ore: "⛏️"
+};
+
         const portColors = {
             "3:1": "#ffffff",
             wood: "#2e8b57",
@@ -220,6 +245,33 @@
             wheat: "#daa520",
             ore: "#808080"
         };
+const PORT_SPOTS = [
+    { q:-2, r:1, side:3 },
+    { q:-2, r:2, side:4 },
+
+    { q:-1, r:-1, side:2 },
+    { q:0, r:-2, side:2 },
+    { q:1, r:-2, side:1 },
+
+    { q:2, r:-2, side:1 },
+    { q:2, r:-1, side:0 },
+    { q:1, r:1, side:5 },
+
+    { q:-1, r:2, side:4 }
+];
+
+
+
+const PORT_ORDER = [
+    null,
+    "3:1",
+    "wood",
+    "brick",
+    "sheep",
+    "wheat",
+    "ore"
+];
+
         const dots = {
             2: 1, 3: 2, 4: 3, 5: 4, 6: 5,
             8: 5, 9: 4, 10: 3, 11: 2, 12: 1
@@ -241,19 +293,19 @@
             const y = size * (3 / 2 * r);
             return { x, y };
         }
+function getEdgeOffset(side) {
+    const d = 56;
 
-        function getEdgeOffset(side) {
-            const d = 40;
-            const offsets = [
-                { x: d, y: 0 },
-                { x: d / 2, y: -d },
-                { x: -d / 2, y: -d },
-                { x: -d, y: 0 },
-                { x: -d / 2, y: d },
-                { x: d / 2, y: d }
-            ];
-            return offsets[side];
-        }
+    return [
+        { x:d, y:0 },
+        { x:d*0.5, y:-44 },
+        { x:-d*0.5, y:-44 },
+        { x:-d, y:0 },
+        { x:-d*0.5, y:44 },
+        { x:d*0.5, y:44 }
+    ][side];
+}
+
 
         function isEdge(hex) {
             return Math.abs(hex.q) === 2 ||
@@ -372,12 +424,16 @@
             socket.emit("setVictoryPoints", points);
         }
 
-        function setEditMode(mode) {
-            editMode = mode;
-            document.getElementById("btnType").classList.toggle("selected", mode === "type");
-            document.getElementById("btnNumber").classList.toggle("selected", mode === "number");
-            document.getElementById("btnPort").classList.toggle("selected", mode === "port");
-        }
+function setEditMode(mode) {
+    editMode = mode;
+
+    document.getElementById("btnType").classList.toggle("selected", mode === "type");
+    document.getElementById("btnNumber").classList.toggle("selected", mode === "number");
+    document.getElementById("btnPort").classList.toggle("selected", mode === "port");
+
+    socket.emit("requestBoard");
+}
+
 
         function setTile(index) {
             socket.emit("cycleTile", index);
@@ -398,136 +454,183 @@
         // =====================================================
         // Board Rendering Functions
         // =====================================================
-        function renderLobbyBoard(board) {
-            if (!board) return;
-            const boardDiv = document.getElementById("lobbyBoard");
-            boardDiv.innerHTML = "";
+function renderLobbyBoard(board) {
+    if (!board) return;
 
-            // Remove old edges first
-            boardDiv.querySelectorAll(".edge").forEach(e => e.remove());
+    const boardDiv = document.getElementById("lobbyBoard");
+    boardDiv.innerHTML = "";
 
+    const centerX = 200;
+    const centerY = 150;
 
-
-            const hexes = [];
-            for (let q = -2; q <= 2; q++) {
-                for (let r = -2; r <= 2; r++) {
-                    const s = -q - r;
-                    if (Math.abs(s) <= 2) {
-                        hexes.push({ q, r });
-                    }
-                }
+    // Build hex coordinate list
+    const hexes = [];
+    for (let q = -2; q <= 2; q++) {
+        for (let r = -2; r <= 2; r++) {
+            const s = -q - r;
+            if (Math.abs(s) <= 2) {
+                hexes.push({ q, r });
             }
+        }
+    }
 
-            hexes.forEach((hex, index) => {
-                const { x, y } = hexToPixel(hex.q, hex.r);
-                const tile = board[index];
-                const div = document.createElement("div");
-                div.className = "tile";
+    // ==========================
+    // DRAW TILES
+    // ==========================
+    hexes.forEach((hex, index) => {
 
-                const centerX = 200;
-                const centerY = 150;
+        const tile = board[index];
+        const pos = hexToPixel(hex.q, hex.r);
 
-                div.style.position = "absolute";
-                div.style.left = `${centerX + x}px`;
-                div.style.top = `${centerY + y}px`;
-                div.style.transform = "translate(-50%, -50%)";
-                div.style.background = colors[tile?.type] || "lightgray";
+        const div = document.createElement("div");
+        div.className = "tile";
 
-                const count = dots[tile?.number] || 0;
-                const isHot = tile?.number === 6 || tile?.number === 8;
+        div.style.position = "absolute";
+        div.style.left = (centerX + pos.x) + "px";
+        div.style.top = (centerY + pos.y) + "px";
+        div.style.transform = "translate(-50%, -50%)";
+        div.style.background = colors[tile.type];
 
-                div.innerHTML = `
-                    <div>${tile?.type || "?"}</div>
-                    <div style="font-weight:bold; color:${isHot ? 'red' : 'black'}">
-                        ${tile?.number || ""}
-                    </div>
-                    <div>${"•".repeat(count)}</div>
-                `;
+        const count = dots[tile.number] || 0;
+        const hot = tile.number === 6 || tile.number === 8;
 
-                // Tile click for host editing
-                if (myId === hostId) {
-                    div.onclick = () => {
-                        if (editMode === "type") {
-                            socket.emit("cycleTile", index);
-                        } else if (editMode === "number") {
-                            const numbers = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
-                            let current = tile?.number;
-                            let nextIndex = (numbers.indexOf(current) + 1) % numbers.length;
-                            let nextNumber = numbers[nextIndex];
+        div.innerHTML = `
+            <div>${tile.type}</div>
+            <div style="font-weight:bold;color:${hot ? "red" : "black"}">
+                ${tile.number || ""}
+            </div>
+            <div>${"•".repeat(count)}</div>
+        `;
 
-                            if (tile?.type === "desert") {
-                                alert("Desert cannot have a number.");
-                                return;
-                            }
+        // Host tile editing
+        if (myId === hostId) {
+            div.onclick = () => {
 
-                            socket.emit("setNumber", {
-                                index,
-                                number: nextNumber
-                            });
-                        }
-                    };
+                // TYPE MODE
+                if (editMode === "type") {
+                    socket.emit("cycleTile", index);
                 }
 
-                boardDiv.appendChild(div);
+                // NUMBER MODE
+                if (editMode === "number") {
 
-                if (!isEdge(hex)) return;
+                    if (tile.type === "desert") return;
 
-                const edges = getEdges(hex, hexes);
-                edges.forEach(edge => {
-                    const edgeDiv = document.createElement("div");
-                    edgeDiv.dataset.q = edge.q;
-                    edgeDiv.dataset.r = edge.r;
-                    edgeDiv.dataset.side = edge.side;
-                    edgeDiv.className = "edge";
+                    const nums = [2,3,4,5,6,8,9,10,11,12];
 
-                    edgeDiv.style.position = "absolute";
-                    edgeDiv.style.width = "12px";
-                    edgeDiv.style.height = "12px";
-                    edgeDiv.style.background = "blue";
-                    edgeDiv.style.borderRadius = "50%";
-                    edgeDiv.style.cursor = "pointer";
+                    let current = tile.number;
+                    let next = nums[(nums.indexOf(current)+1)%nums.length];
 
-                    const offset = getEdgeOffset(edge.side);
-                    edgeDiv.style.left = `${centerX + x + offset.x}px`;
-                    edgeDiv.style.top = `${centerY + y + offset.y}px`;
-                    edgeDiv.style.transform = "translate(-50%, -50%)";
-
-                    edgeDiv.onmouseenter = () => {
-                        if (editMode === "port") {
-                            edgeDiv.style.background = "yellow";
-                        }
-                    };
-
-                    edgeDiv.onmouseleave = () => {
-                        edgeDiv.style.background = "blue";
-                    };
-
-                    edgeDiv.onclick = () => {
-                        if (editMode === "port") {
-                            const existing = gamePorts.find(p =>
-                                p.q === edge.q && p.r === edge.r && p.side === edge.side
-                            );
-                            const portTypes = ["3:1", "wood", "brick", "sheep", "wheat", "ore"];
-                            let nextType = portTypes[0];
-                            if (existing) {
-                                const i = portTypes.indexOf(existing.type);
-                                nextType = portTypes[(i + 1) % portTypes.length];
-                            }
-                            socket.emit("setPort", {
-                                q: edge.q,
-                                r: edge.r,
-                                side: edge.side,
-                                type: nextType
-                            });
-                        }
-                    };
-
-                    boardDiv.appendChild(edgeDiv);
-                });
-            });
-            renderPorts(gamePorts);
-
+                    socket.emit("setNumber", {
+                        index,
+                        number: next
+                    });
+                }
+            };
         }
+
+        boardDiv.appendChild(div);
+    });
+
+    // ==========================
+    // DRAW PORTS
+    // ==========================
+    PORT_SPOTS.forEach(spot => {
+
+        const hex = hexes.find(h => h.q === spot.q && h.r === spot.r);
+        if (!hex) return;
+
+        const pos = hexToPixel(hex.q, hex.r);
+        const offset = getEdgeOffset(spot.side);
+
+        const x = centerX + pos.x + offset.x;
+        const y = centerY + pos.y + offset.y;
+
+        const existing = gamePorts.find(p =>
+            p.q === spot.q &&
+            p.r === spot.r &&
+            p.side === spot.side
+        );
+
+        // ======================
+        // HOST PORT EDIT BUTTONS
+        // ======================
+        if (myId === hostId && editMode === "port") {
+
+            const btn = document.createElement("button");
+            btn.className = "portBtn";
+
+            btn.style.position = "absolute";
+            btn.style.left = x + "px";
+            btn.style.top = y + "px";
+            btn.style.transform = "translate(-50%, -50%)";
+
+            btn.textContent = existing ? portEmoji[existing.type] : "➕";
+
+
+            btn.onclick = () => {
+
+                const order = [
+                    null,
+                    "3:1",
+                    "wood",
+                    "brick",
+                    "sheep",
+                    "wheat",
+                    "ore"
+                ];
+
+                let current = existing ? existing.type : null;
+                let next = order[(order.indexOf(current)+1)%order.length];
+
+                socket.emit("setPort", {
+                    q: spot.q,
+                    r: spot.r,
+                    side: spot.side,
+                    type: next
+                });
+            };
+
+            boardDiv.appendChild(btn);
+        }
+
+        // ======================
+        // NORMAL PORT DISPLAY
+        // ======================
+        if (existing && editMode !== "port") {
+
+            const label = document.createElement("div");
+
+            label.style.position = "absolute";
+            label.style.left = x + "px";
+            label.style.top = y + "px";
+            label.style.transform = "translate(-50%, -50%)";
+
+            label.style.background = "#111";
+            label.style.color = "white";
+            label.style.padding = "6px 12px";
+            label.style.borderRadius = "14px";
+            label.style.fontWeight = "bold";
+            label.style.fontSize = "14px";
+            label.style.boxShadow = "0 4px 10px rgba(0,0,0,.3)";
+
+            label.textContent = portEmoji[existing.type];
+label.style.width = "46px";
+label.style.height = "46px";
+label.style.borderRadius = "50%";
+label.style.display = "flex";
+label.style.alignItems = "center";
+label.style.justifyContent = "center";
+label.style.fontSize = "24px";
+label.style.background = "white";
+label.style.color = "black";
+
+
+            boardDiv.appendChild(label);
+        }
+
+    });
+}
 
         function renderBoard(board) {
             console.log("Rendering board:", board);
@@ -610,8 +713,10 @@
         });
 
         socket.on("boardUpdate", (board) => {
-            renderLobbyBoard(board);
-        });
+    lastBoard = board;
+    renderLobbyBoard(board);
+});
+
 
         socket.on("settingsUpdate", (settings) => {
             document.getElementById("settingsStatus").textContent =
@@ -642,8 +747,9 @@
 
         socket.on("portsUpdate", (ports) => {
     gamePorts = ports;
-    renderPorts(gamePorts);
+    renderLobbyBoard(lastBoard);
 });
+
 
         socket.on("turnUpdate", (turnIndex) => {
             const players = document.querySelectorAll("#players li");
@@ -684,39 +790,6 @@
                 ul.appendChild(li);
             });
         });
-function renderPorts(ports) {
-    const lobbyBoard = document.getElementById("lobbyBoard");
-
-    lobbyBoard.querySelectorAll(".port").forEach(p => p.remove());
-
-    const centerX = 200;
-    const centerY = 150;
-
-    ports.forEach(p => {
-        const { x, y } = hexToPixel(p.q, p.r);
-        const offset = getEdgeOffset(p.side);
-
-        const portDiv = document.createElement("div");
-        portDiv.className = "port";
-
-        portDiv.style.position = "absolute";
-        portDiv.style.left = `${centerX + x + offset.x}px`;
-        portDiv.style.top = `${centerY + y + offset.y}px`;
-        portDiv.style.transform = "translate(-50%, -50%)";
-        portDiv.style.background = portColors[p.type] || "red";
-
-        portDiv.style.width = "24px";
-        portDiv.style.height = "16px";
-        portDiv.style.borderRadius = "4px";
-        portDiv.style.fontSize = "8px";
-        portDiv.style.display = "flex";
-        portDiv.style.alignItems = "center";
-        portDiv.style.justifyContent = "center";
-        portDiv.textContent = p.type;
-
-        lobbyBoard.appendChild(portDiv);
-    });
-}
 
         // =====================================================
         // UI Update Functions
@@ -747,7 +820,7 @@ function renderPorts(ports) {
 
   const board = document.getElementById("lobbyBoard");
   if (board) {
-    board.style.display = isHost ? "block" : "none";
+    board.style.display = "block";
   }
 }
 

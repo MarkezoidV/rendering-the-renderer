@@ -86,6 +86,38 @@ function createBlankBoard() {
 // ================================
 // RANDOM LEGAL BOARD
 // ================================
+function createRandomPorts() {
+    const spots = [
+    { q:-2, r:1, side:3 },
+    { q:-2, r:2, side:4 },
+
+    { q:-1, r:-1, side:2 },
+    { q:0, r:-2, side:2 },
+    { q:1, r:-2, side:1 },
+
+    { q:2, r:-2, side:1 },
+    { q:2, r:-1, side:0 },
+    { q:1, r:1, side:5 },
+
+    { q:-1, r:2, side:4 }
+];
+
+
+    const types = [
+        "3:1","3:1","3:1","3:1",
+        "wood","brick","sheep","wheat","ore"
+    ];
+
+    for (let i = types.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [types[i], types[j]] = [types[j], types[i]];
+    }
+
+    return spots.map((spot, i) => ({
+        ...spot,
+        type: types[i]
+    }));
+}
 
 function createRandomBoard() {
   for (let tries = 0; tries < 1000; tries++) {
@@ -152,17 +184,6 @@ function touchingHot(board, index) {
   }
 
   return false;
-}
-
-// ================================
-// PORTS
-// ================================
-
-function createPorts() {
-  return shuffle(PORT_COUNTS).map((type, side) => ({
-    side,
-    type
-  }));
 }
 
 // ================================
@@ -277,7 +298,7 @@ function validateBoard(board) {
 
 module.exports = {
   createRandomBoard,
-  createPorts,
+  createRandomPorts,
   cycleTile,
   setNumber,
   setPort,

@@ -21,11 +21,66 @@ function getRoom(code) {
     return rooms[code];
 }
 
+function runAITurn(room) {
+    const current = room.currentPlayer();
+    if (!current) return;
+
+    if (!current.ai) return;
+
+    setTimeout(() => {
+        console.log(current.name + " took AI turn");
+
+        // later we add real AI moves here
+
+        room.nextTurn();
+        emitTurn(room);
+
+        runAITurn(room); // chain next AI if another AI turn
+    }, 1200);
+}
+
+function validatePorts(ports) {
+    if (ports.length !== 9) return "Need 9 ports.";
+
+    const seen = new Set();
+
+    const count = {
+        "3:1":0,
+        wood:0,
+        brick:0,
+        sheep:0,
+        wheat:0,
+        ore:0
+    };
+
+    for (const p of ports) {
+        const key = `${p.q},${p.r},${p.side}`;
+
+        if (seen.has(key)) return "Duplicate port position.";
+        seen.add(key);
+
+        if (!(p.type in count)) return "Invalid port type.";
+
+        count[p.type]++;
+    }
+
+    if (count["3:1"] !== 4) return "Need 4x 3:1";
+    if (count.wood !== 1) return "Need wood port";
+    if (count.brick !== 1) return "Need brick port";
+    if (count.sheep !== 1) return "Need sheep port";
+    if (count.wheat !== 1) return "Need wheat port";
+    if (count.ore !== 1) return "Need ore port";
+
+    return null;
+}
+
+
 function makeRoom(code) {
     const room = new GameRoom(code);
 
     room.board = Board.createRandomBoard();
-    room.ports = Board.createPorts();
+room.ports = Board.createRandomPorts();
+
 
     rooms[code] = room;
     return room;
@@ -170,7 +225,7 @@ io.on("connection", socket => {
         emitRoom(room);
     });
 
-    socket.on("setBoardMode", mode => {
+socket.on("setBoardMode", mode => {
     const room = requireRoom(socket);
     if (!requireHost(socket, room)) return;
 
@@ -178,12 +233,13 @@ io.on("connection", socket => {
 
     if (mode === "random") {
         room.board = Board.createRandomBoard();
-        room.ports = Board.createPorts();
+        room.ports = Board.createRandomPorts();
         emitBoard(room);
     }
 
-    emitRoom(room);
+    emitRoom(room); // <- REQUIRED
 });
+
 
 
     socket.on("setTurnMode", mode => {
@@ -239,28 +295,45 @@ io.on("connection", socket => {
         emitBoard(room);
     });
 
-    socket.on("setPort", ({ side, type }) => {
-        const room = requireRoom(socket);
-        if (!requireHost(socket, room)) return;
-        if (room.settings.boardMode !== "manual") return;
+socket.on("setPort", ({ q, r, side, type }) => {
+    const room = requireRoom(socket);
+    if (!requireHost(socket, room)) return;
 
-        room.ports = Board.setPort(room.ports, side, type);
+    room.ports = room.ports.filter(p =>
+        !(p.q === q && p.r === r && p.side === side)
+    );
 
-        emitBoard(room);
-    });
+    if (type) {
+        room.ports.push({ q, r, side, type });
+    }
+
+    emitBoard(room);
+});
 
     socket.on("validateSetup", () => {
-        const room = requireRoom(socket);
-        if (!requireHost(socket, room)) return;
+    const room = requireRoom(socket);
+    if (!requireHost(socket, room)) return;
 
-        const result = Board.validateBoard(room.board);
+    // board validation
+    const boardResult = Board.validateBoard(room.board);
 
-        if (result.ok) {
-            socket.emit("setupValid");
-        } else {
-            socket.emit("setupError", result.error);
-        }
-    });
+    if (!boardResult.ok) {
+        socket.emit("setupError", boardResult.error);
+        return;
+    }
+
+    // port validation
+    const portError = validatePorts(room.ports || []);
+
+    if (portError) {
+        socket.emit("setupError", portError);
+        return;
+    }
+
+    socket.emit("setupValid");
+});
+
+    
 
     // ==============================
     // START GAME
@@ -275,16 +348,26 @@ io.on("connection", socket => {
         }
 
         if (room.settings.boardMode === "random") {
-            room.board = Board.createRandomBoard();
-            room.ports = Board.createPorts();
-        }
+    room.board = Board.createRandomBoard();
+    room.ports = Board.createRandomPorts();
+}
 
-        const valid = Board.validateBoard(room.board);
+
+const valid = Board.validateBoard(room.board);
 
         if (!valid.ok) {
             socket.emit("setupError", valid.error);
             return;
-        }
+        }        
+
+
+const portError = validatePorts(room.ports || []);
+if (portError) {
+   socket.emit("setupError", portError);
+   return;
+}
+
+
 
         room.start();
 
@@ -294,22 +377,29 @@ io.on("connection", socket => {
         });
 
         emitTurn(room);
+runAITurn(room);
+
     });
 
     // ==============================
     // TURNS
     // ==============================
     socket.on("nextTurn", () => {
-        const room = requireRoom(socket);
-        if (!room || !room.started) return;
+    const room = requireRoom(socket);
+    if (!room || !room.started) return;
 
-        const current = room.currentPlayer();
-        if (!current) return;
-        if (current.id !== socket.id) return;
+    const current = room.currentPlayer();
+    if (!current) return;
 
-        room.nextTurn();
-        emitTurn(room);
-    });
+    // Only human whose turn it is can end turn
+    if (!current.ai && current.id !== socket.id) return;
+
+    room.nextTurn();
+    emitTurn(room);
+
+    runAITurn(room);
+});
+
 
     // ==============================
     // RESET GAME
@@ -321,7 +411,7 @@ io.on("connection", socket => {
         room.reset();
 
         room.board = Board.createRandomBoard();
-        room.ports = Board.createPorts();
+        room.ports = Board.createRandomPorts();
 
         emitRoom(room);
         emitBoard(room);
