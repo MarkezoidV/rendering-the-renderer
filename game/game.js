@@ -1,3 +1,5 @@
+const Player = require("./Player");
+const { shuffle } = require("../utils/helpers");
 class GameRoom {
     constructor(code) {
         this.code = code;
@@ -11,10 +13,11 @@ class GameRoom {
 
         this.board = [];
         this.ports = [];
-
+this.settlements = [];
+this.roads = [];
         this.settings = {
             boardMode: "random",
-            turnMode: "join",
+            turnMode: "random",
             victoryPoints: 10
         };
     }
@@ -23,18 +26,26 @@ class GameRoom {
     // PLAYERS
     // =========================
 
-    addPlayer(id, name, ai = false) {
-        this.players.push({
-            id,
-            name,
-            ai,
-            ready: ai
-        });
+   
+startTurn() {
+    const { rollDice } = require("../utils/helpers");
 
-        if (!this.hostId && !ai) {
-            this.hostId = id;
-        }
+    const roll = rollDice();
+    this.lastRoll = roll;
+
+    return roll;
+}
+addPlayer(id, name, isAI = false) {
+    const player = new Player(id, name, isAI);
+
+    if (isAI) player.ready = true;
+
+    this.players.push(player);
+
+    if (!this.hostId && !isAI) {
+        this.hostId = id;
     }
+}
 
     removePlayer(id) {
         this.players = this.players.filter(p => p.id !== id);
@@ -45,19 +56,19 @@ class GameRoom {
     }
 
     assignHost() {
-        const human = this.players.find(p => !p.ai);
+        const human = this.players.find(p => !p.isAI);
         this.hostId = human ? human.id : null;
     }
 
     toggleReady(id) {
         const player = this.players.find(p => p.id === id);
-        if (!player || player.ai) return;
+        if (!player || player.isAI) return;
 
         player.ready = !player.ready;
     }
 
     addAI() {
-        const count = this.players.filter(p => p.ai).length + 1;
+        const count = this.players.filter(p => p.isAI).length + 1;
 
         this.addPlayer(
             "ai_" + Date.now(),
@@ -74,9 +85,11 @@ class GameRoom {
     // GAME STATE
     // =========================
 
-    canStart() {
-        return this.players.filter(p => p.ready).length >= 2;
-    }
+canStart() {
+    const humans = this.players.filter(p => !p.isAI);
+    return humans.length >= 2 &&
+           humans.every(p => p.ready);
+}
 
     start() {
         this.started = true;
@@ -92,29 +105,24 @@ class GameRoom {
         this.turn = 0;
 
         this.players.forEach(p => {
-            p.ready = p.ai;
-        });
+    p.reset();
+    if (p.isAI) p.ready = true;
+});
     }
-
+getPlayer(id) {
+    return this.players.find(p => p.id === id);
+}
     nextTurn() {
-        this.turn++;
-
-        if (this.turn >= this.players.length) {
-            this.turn = 0;
-        }
+        this.turn = (this.turn + 1) % this.players.length;
     }
 
     currentPlayer() {
         return this.players[this.turn];
     }
 
-    shufflePlayers() {
-        for (let i = this.players.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.players[i], this.players[j]] =
-                [this.players[j], this.players[i]];
-        }
-    }
+shufflePlayers() {
+    this.players = shuffle(this.players);
+}
 
     // =========================
     // SETTINGS
@@ -141,7 +149,7 @@ class GameRoom {
     // =========================
 
     hasHumans() {
-        return this.players.some(p => !p.ai);
+        return this.players.some(p => !p.isAI);
     }
 
     isFull() {

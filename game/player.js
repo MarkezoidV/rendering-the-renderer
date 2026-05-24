@@ -1,5 +1,3 @@
-// /game/Player.js
-
 class Player {
     constructor(id, name, isAI = false) {
         this.id = id;
@@ -22,26 +20,83 @@ class Player {
         this.cities = [];
     }
 
+    // =====================
+    // STATE
+    // =====================
+
     toggleReady() {
         this.ready = !this.ready;
     }
 
-    addPoints(amount = 1) {
-        this.points += amount;
+    reset() {
+        this.ready = false;
+        this.points = 0;
+
+        for (const key in this.resources) {
+            this.resources[key] = 0;
+        }
+
+        this.roads = [];
+        this.settlements = [];
+        this.cities = [];
     }
+
+    // =====================
+    // BUILDING
+    // =====================
+
+    addSettlement(spot) {
+        this.settlements.push(spot);
+        this.addPoints(1);
+    }
+
+    addCity(spot) {
+        // remove settlement if upgrading
+        this.settlements = this.settlements.filter(s => s !== spot);
+
+        this.cities.push(spot);
+        this.addPoints(1); // +1 extra (total 2)
+    }
+
+    addRoad(edge) {
+        this.roads.push(edge);
+    }
+
+    // =====================
+    // RESOURCES
+    // =====================
 
     giveResource(type, amount = 1) {
-        if (this.resources[type] !== undefined) {
-            this.resources[type] += amount;
-        }
+        if (!(type in this.resources)) return;
+        this.resources[type] += amount;
     }
 
-    spendResource(type, amount = 1) {
-        if (this.resources[type] >= amount) {
+    getResource(type) {
+        return this.resources[type] || 0;
+    }
+
+    canAfford(cost) {
+        return Object.entries(cost).every(
+            ([type, amount]) => this.resources[type] >= amount
+        );
+    }
+
+    spend(cost) {
+        if (!this.canAfford(cost)) return false;
+
+        for (const [type, amount] of Object.entries(cost)) {
             this.resources[type] -= amount;
-            return true;
         }
-        return false;
+
+        return true;
+    }
+
+    // =====================
+    // POINTS
+    // =====================
+
+    addPoints(amount = 1) {
+        this.points += amount;
     }
 }
 

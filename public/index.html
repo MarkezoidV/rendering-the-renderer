@@ -246,19 +246,18 @@
             ore: "#808080"
         };
 const PORT_SPOTS = [
-    { q:-2, r:1, side:3 },
-    { q:-2, r:2, side:4 },
-
-    { q:-1, r:-1, side:2 },
+    { q:-1, r:-1, side:3 },
     { q:0, r:-2, side:2 },
-    { q:1, r:-2, side:1 },
-
-    { q:2, r:-2, side:1 },
-    { q:2, r:-1, side:0 },
+    { q:2, r:-2, side:2 },
+    { q:2, r:-1, side:1 },
+    { q:2, r:0, side:0 },
     { q:1, r:1, side:5 },
-
-    { q:-1, r:2, side:4 }
+    { q:0, r:2, side:4 },
+    { q:-2, r:2, side:4 },
+    { q:-2, r:1, side:3 }
 ];
+
+
 
 
 
@@ -294,17 +293,19 @@ const PORT_ORDER = [
             return { x, y };
         }
 function getEdgeOffset(side) {
-    const d = 56;
+    const d = 82;
+    const h = 64;
 
     return [
         { x:d, y:0 },
-        { x:d*0.5, y:-44 },
-        { x:-d*0.5, y:-44 },
+        { x:d*0.5, y:-h },
+        { x:-d*0.5, y:-h },
         { x:-d, y:0 },
-        { x:-d*0.5, y:44 },
-        { x:d*0.5, y:44 }
+        { x:-d*0.5, y:h },
+        { x:d*0.5, y:h }
     ][side];
 }
+
 
 
         function isEdge(hex) {
@@ -658,7 +659,7 @@ label.style.color = "black";
         socket.on("connect", () => {
             myId = socket.id;
             document.getElementById("settingsStatus").textContent =
-                "Board: random | Turns: join | VP: 10";
+                "Board: random | Turns: random | VP: 10";
         });
 
         socket.on("host", (id) => {

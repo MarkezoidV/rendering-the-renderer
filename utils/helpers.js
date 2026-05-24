@@ -1,13 +1,23 @@
 // /utils/helpers.js
 
+// =====================
+// RANDOM / ARRAY
+// =====================
+
 function shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
+    const arr = [...array]; // avoid mutating original
+
+    for (let i = arr.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
+        [arr[i], arr[j]] = [arr[j], arr[i]];
     }
 
-    return array;
+    return arr;
 }
+
+// =====================
+// ROOM
+// =====================
 
 function generateRoomCode(length = 4) {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -20,20 +30,41 @@ function generateRoomCode(length = 4) {
     return code;
 }
 
+// =====================
+// MATH
+// =====================
+
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+// =====================
+// ARRAY UTILS
+// =====================
+
 function removeFromArray(array, callback) {
     const index = array.findIndex(callback);
-
     if (index !== -1) {
-        array.splice(index, 1);
+        return array.splice(index, 1)[0]; // return removed item
     }
+    return null;
 }
 
+// =====================
+// OBJECT UTILS
+// =====================
+
 function deepCopy(obj) {
-    return JSON.parse(JSON.stringify(obj));
+    return structuredClone(obj); // modern + safer
+}
+
+// =====================
+// GAME UTILS (add this 🔥)
+// =====================
+
+function rollDice() {
+    return Math.floor(Math.random() * 6 + 1) +
+           Math.floor(Math.random() * 6 + 1);
 }
 
 module.exports = {
@@ -41,5 +72,6 @@ module.exports = {
     generateRoomCode,
     clamp,
     removeFromArray,
-    deepCopy
+    deepCopy,
+    rollDice
 };
