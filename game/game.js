@@ -1,4 +1,4 @@
-const Player = require("./Player");
+const Player = require("./player");
 const { shuffle } = require("../utils/helpers");
 class GameRoom {
     constructor(code) {
