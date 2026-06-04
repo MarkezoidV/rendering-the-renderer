@@ -25,7 +25,7 @@ function runAITurn(room) {
     const current = room.currentPlayer();
     if (!current) return;
 
-    if (!current.ai) return;
+    if (!current.isAI) return;
 
     setTimeout(() => {
         console.log(current.name + " took AI turn");
@@ -369,7 +369,7 @@ if (portError) {
 
 
 
-        room.start();
+        const roll = room.start();
 
         io.to(room.code).emit("startGame", {
             board: room.board,
@@ -378,7 +378,7 @@ if (portError) {
 
         emitTurn(room);
 runAITurn(room);
-
+io.to(room.code).emit("diceRolled", roll);
     });
 
     // ==============================
@@ -392,12 +392,13 @@ runAITurn(room);
     if (!current) return;
 
     // Only human whose turn it is can end turn
-    if (!current.ai && current.id !== socket.id) return;
+    if (!current.isAI && current.id !== socket.id) return;
 
     room.nextTurn();
-    emitTurn(room);
-
-    runAITurn(room);
+    const roll = room.startTurn();
+emitTurn(room);
+io.to(room.code).emit("diceRolled", roll);
+runAITurn(room);;
 });
 
 

@@ -1,5 +1,6 @@
 const Player = require("./player");
 const { shuffle } = require("../utils/helpers");
+const { rollDice } = require("../utils/helpers");
 class GameRoom {
     constructor(code) {
         this.code = code;
@@ -28,12 +29,11 @@ this.roads = [];
 
    
 startTurn() {
-    const { rollDice } = require("../utils/helpers");
+    this.lastRoll = rollDice();
 
-    const roll = rollDice();
-    this.lastRoll = roll;
+    console.log("Rolled:", this.lastRoll);
 
-    return roll;
+    return this.lastRoll;
 }
 addPlayer(id, name, isAI = false) {
     const player = new Player(id, name, isAI);
@@ -87,19 +87,24 @@ addPlayer(id, name, isAI = false) {
 
 canStart() {
     const humans = this.players.filter(p => !p.isAI);
-    return humans.length >= 2 &&
+
+    return this.players.length >= 2 &&
            humans.every(p => p.ready);
 }
+start() {
+    this.started = true;
+    this.turn = 0;
 
-    start() {
-        this.started = true;
-        this.turn = 0;
-
-        if (this.settings.turnMode === "random") {
-            this.shufflePlayers();
-        }
+    if (this.settings.turnMode === "random") {
+        this.shufflePlayers();
     }
 
+    return this.startTurn();
+}
+startTurn() {
+    this.lastRoll = rollDice();
+    return this.lastRoll;
+}
     reset() {
         this.started = false;
         this.turn = 0;
