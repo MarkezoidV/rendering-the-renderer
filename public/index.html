@@ -18,8 +18,40 @@
     margin-top: 20px;
     gap: 20px;
     flex-wrap: wrap;
+}.hidden {
+    display: none !important;
 }
 
+#dice-overlay {
+    position: fixed;
+    inset: 0;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+
+    background: rgba(0,0,0,0.35);
+    z-index: 9999;
+
+    cursor: pointer;
+}
+.die {
+    width: 100px;
+    height: 100px;
+
+    perspective: 1000px;
+}
+
+.cube {
+    width: 100%;
+    height: 100%;
+
+    position: relative;
+
+    transform-style: preserve-3d;
+    transition: transform 2s ease-out;
+}
 
 
 
@@ -44,7 +76,25 @@
 .portBtn:hover{
     transform:translate(-50%,-50%) scale(1.08);
 }
+.hidden {
+    display: none;
+}
 
+.face {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    background: white;
+    border: 2px solid black;
+    border-radius: 12px;
+}
+
+.front  { transform: rotateY(0deg) translateZ(50px); }
+.back   { transform: rotateY(180deg) translateZ(50px); }
+.right  { transform: rotateY(90deg) translateZ(50px); }
+.left   { transform: rotateY(-90deg) translateZ(50px); }
+.top    { transform: rotateX(90deg) translateZ(50px); }
+.bottom { transform: rotateX(-90deg) translateZ(50px); }
 
 
 
@@ -189,7 +239,29 @@
         <button id="endTurnBtn" onclick="nextTurn()">End Turn</button>
 
     </div>
+<div id="dice-overlay" class="hidden">
+    <div id="die1" class="die">
+    <div class="cube">
+        <div class="face front">1</div>
+        <div class="face back">6</div>
+        <div class="face right">3</div>
+        <div class="face left">4</div>
+        <div class="face top">5</div>
+        <div class="face bottom">2</div>
+    </div>
+</div>
 
+    <div id="die2" class="die">
+        <div class="cube">
+            <div class="face front">1</div>
+            <div class="face back">6</div>
+            <div class="face right">3</div>
+            <div class="face left">4</div>
+            <div class="face top">5</div>
+            <div class="face bottom">2</div>
+        </div>
+    </div>
+</div>
     <!-- ===================================================== -->
     <!-- JOIN SCREEN                                           -->
     <!-- ===================================================== -->
@@ -219,6 +291,7 @@
             { q: -1, r: 1 },
             { q: 0, r: 1 }
         ];
+        let waitingForRoll = false;
         const types = ["wood", "brick", "sheep", "wheat", "ore", "desert"];
         const colors = {
             wood: "#2e8b57",
@@ -386,7 +459,18 @@ function getEdgeOffset(side) {
             socket.emit("join", { name: playerName, room });
             show("hostScreen");
         }
+function setDieFace(cube, value) {
+    const rotations = {
+        1: "rotateX(0deg) rotateY(0deg)",
+        2: "rotateX(90deg) rotateY(0deg)",
+        3: "rotateY(-90deg)",
+        4: "rotateY(90deg)",
+        5: "rotateX(-90deg)",
+        6: "rotateY(180deg)"
+    };
 
+    cube.style.transform = rotations[value];
+}
         function leaveLobby() {
             socket.emit("leaveRoom");
             currentRoom = "";
@@ -632,8 +716,30 @@ label.style.color = "black";
 
     });
 }
+function animateDice(d1, d2) {
+    const overlay = document.getElementById("dice-overlay");
+    const cube1 = document.querySelector("#die1 .cube");
+    const cube2 = document.querySelector("#die2 .cube");
 
-        function renderBoard(board) {
+    overlay.classList.remove("hidden");
+
+    cube1.style.transform =
+        `rotateX(${1080 + Math.random()*720}deg)
+         rotateY(${1080 + Math.random()*720}deg)`;
+
+    cube2.style.transform =
+        `rotateX(${1080 + Math.random()*720}deg)
+         rotateY(${1080 + Math.random()*720}deg)`;
+
+    setTimeout(() => {
+        setDieFace(cube1, d1);
+        setDieFace(cube2, d2);
+
+        setTimeout(() => {
+            overlay.classList.add("hidden");
+        }, 1500);
+    }, 2000);
+}        function renderBoard(board) {
             console.log("Rendering board:", board);
             const boardDiv = document.getElementById("board");
             boardDiv.innerHTML = "";
@@ -678,6 +784,33 @@ label.style.color = "black";
             }
             updateStartButton();
         });
+        socket.on("needDiceRoll", () => {
+    waitingForRoll = true;
+
+    document
+        .getElementById("dice-overlay")
+        .classList.remove("hidden");
+        document
+    .getElementById("dice-overlay")
+    .addEventListener("click", () => {
+
+        if (!waitingForRoll) return;
+
+        waitingForRoll = false;
+
+        socket.emit("rollDice");
+    });
+});
+socket.on("diceRolled", data => {
+
+    animateDice(data.die1, data.die2);
+
+    setTimeout(() => {
+        document
+            .getElementById("dice-overlay")
+            .classList.add("hidden");
+    }, 2200);
+});
 
         socket.on("players", (list) => {
             document.getElementById("roomCode").textContent =

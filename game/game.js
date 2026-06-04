@@ -27,14 +27,7 @@ this.roads = [];
     // PLAYERS
     // =========================
 
-   
-startTurn() {
-    this.lastRoll = rollDice();
 
-    console.log("Rolled:", this.lastRoll);
-
-    return this.lastRoll;
-}
 addPlayer(id, name, isAI = false) {
     const player = new Player(id, name, isAI);
 
@@ -102,7 +95,15 @@ start() {
     return this.startTurn();
 }
 startTurn() {
-    this.lastRoll = rollDice();
+    const die1 = Math.floor(Math.random() * 6) + 1;
+    const die2 = Math.floor(Math.random() * 6) + 1;
+
+    this.lastRoll = {
+        die1,
+        die2,
+        total: die1 + die2
+    };
+
     return this.lastRoll;
 }
     reset() {

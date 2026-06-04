@@ -20,26 +20,37 @@ const rooms = {};
 function getRoom(code) {
     return rooms[code];
 }
-
 function runAITurn(room) {
     const current = room.currentPlayer();
-    if (!current) return;
 
+    if (!current) return;
     if (!current.isAI) return;
 
     setTimeout(() => {
-        console.log(current.name + " took AI turn");
 
-        // later we add real AI moves here
+        const roll = room.startTurn();
 
-        room.nextTurn();
-        emitTurn(room);
+        io.to(room.code).emit("diceRolled", {
+            die1: roll.die1,
+            die2: roll.die2,
+            total: roll.total
+        });
 
-        runAITurn(room); // chain next AI if another AI turn
-    }, 1200);
-}
+        setTimeout(() => {
 
-function validatePorts(ports) {
+            // AI actions here
+
+            room.nextTurn();
+            emitTurn(room);
+
+            io.to(room.code).emit("needDiceRoll");
+
+            runAITurn(room);
+
+        }, 2500);
+
+    }, 1000);
+}function validatePorts(ports) {
     if (ports.length !== 9) return "Need 9 ports.";
 
     const seen = new Set();
@@ -113,6 +124,7 @@ function deleteRoomIfDead(room) {
     }
     return false;
 }
+
 
 function getPublicRooms() {
     return Object.values(rooms)
@@ -395,12 +407,24 @@ io.to(room.code).emit("diceRolled", roll);
     if (!current.isAI && current.id !== socket.id) return;
 
     room.nextTurn();
-    const roll = room.startTurn();
+  io.to(room.code).emit("needDiceRoll");
 emitTurn(room);
-io.to(room.code).emit("diceRolled", roll);
+
 runAITurn(room);;
 });
+socket.on("rollDice", () => {
 
+    const room = requireRoom(socket);
+    if (!room) return;
+
+    const roll = room.startTurn();
+
+    io.to(room.code).emit("diceRolled", {
+        die1: roll.die1,
+        die2: roll.die2,
+        total: roll.total
+    });
+});
 
     // ==============================
     // RESET GAME
