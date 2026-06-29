@@ -5,7 +5,7 @@ class Player {
         this.isAI = isAI;
 
         this.ready = false;
-        this.points = 0;
+        
 
         this.resources = {
             wood: 0,
@@ -14,7 +14,11 @@ class Player {
             wheat: 0,
             ore: 0
         };
-
+        this.devCards = [];
+this.knightsPlayed = 0;
+this.longestRoad = false;
+this.largestArmy = false;
+this.color = null;
         this.roads = [];
         this.settlements = [];
         this.cities = [];
@@ -27,18 +31,47 @@ class Player {
     toggleReady() {
         this.ready = !this.ready;
     }
-
+hasResources(cost) {
+    return this.canAfford(cost);
+}
+getPoints() {
+    return (
+        this.settlements.length +
+        this.cities.length * 2
+    );
+}
+removeResource(type, amount = 1) {
+    if (!(type in this.resources)) return;
+    this.resources[type] = Math.max(0, this.resources[type] - amount);
+}
     reset() {
         this.ready = false;
-        this.points = 0;
+        
 
-        for (const key in this.resources) {
-            this.resources[key] = 0;
-        }
+        this.resources = {
+    wood: 0,
+    brick: 0,
+    sheep: 0,
+    wheat: 0,
+    ore: 0
+};
 
-        this.roads = [];
-        this.settlements = [];
+        this.roads = {
+    q,
+    r,
+    side
+};
+        this.settlements = {
+    q,
+    r,
+    corner
+};
         this.cities = [];
+        this.devCards = [];
+this.longestRoad = false;
+this.largestArmy = false;
+this.knightsPlayed = 0;
+this.color = null;
     }
 
     // =====================
@@ -47,7 +80,7 @@ class Player {
 
     addSettlement(spot) {
         this.settlements.push(spot);
-        this.addPoints(1);
+        
     }
 
     addCity(spot) {
@@ -55,7 +88,7 @@ class Player {
         this.settlements = this.settlements.filter(s => s !== spot);
 
         this.cities.push(spot);
-        this.addPoints(1); // +1 extra (total 2)
+        
     }
 
     addRoad(edge) {
@@ -94,10 +127,17 @@ class Player {
     // =====================
     // POINTS
     // =====================
+getPoints() {
+    let points = 0;
 
-    addPoints(amount = 1) {
-        this.points += amount;
-    }
+    points += this.settlements.length;
+    points += this.cities.length * 2;
+
+    if (this.longestRoad) points += 2;
+    if (this.largestArmy) points += 2;
+
+    return points;
+}
 }
 
 module.exports = Player;

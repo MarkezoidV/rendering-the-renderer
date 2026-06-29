@@ -1,6 +1,6 @@
 // game/board.js
 // Final polished Catan board system
-
+const { shuffle } = require("../utils/helpers");
 const RESOURCE_COUNTS = {
   wood: 4,
   brick: 3,
@@ -36,25 +36,16 @@ const POSITIONS = [
   { q:1,r:-2 }, { q:1,r:-1 }, { q:1,r:0 }, { q:1,r:1 },
   { q:2,r:-2 }, { q:2,r:-1 }, { q:2,r:0 }
 ];
+const TILE_COUNT = POSITIONS.length;
 
-function shuffle(arr) {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
 
-function directions() {
-  return [
+const DIRECTIONS = [
     [1,0],[1,-1],[0,-1],
     [-1,0],[-1,1],[0,1]
-  ];
-}
+];
 
 function adjacent(a, b) {
-  return directions().some(([dq, dr]) =>
+  return DIRECTIONS.some(([dq, dr]) =>
     a.q + dq === b.q && a.r + dr === b.r
   );
 }
@@ -77,12 +68,45 @@ function buildNumberPool() {
 
 function createBlankBoard() {
   return POSITIONS.map(() => ({
-    type: "wood",
+    type: null,
     number: null,
     robber: false
   }));
 }
+function validatePorts(ports) {
+    if (ports.length !== 9) return "Need 9 ports.";
 
+    const seen = new Set();
+
+    const count = {
+        "3:1":0,
+        wood:0,
+        brick:0,
+        sheep:0,
+        wheat:0,
+        ore:0
+    };
+
+    for (const p of ports) {
+        const key = `${p.q},${p.r},${p.side}`;
+
+        if (seen.has(key)) return "Duplicate port position.";
+        seen.add(key);
+
+        if (!(p.type in count)) return "Invalid port type.";
+
+        count[p.type]++;
+    }
+
+    if (count["3:1"] !== 4) return "Need 4x 3:1";
+    if (count.wood !== 1) return "Need wood port";
+    if (count.brick !== 1) return "Need brick port";
+    if (count.sheep !== 1) return "Need sheep port";
+    if (count.wheat !== 1) return "Need wheat port";
+    if (count.ore !== 1) return "Need ore port";
+
+    return null;
+}
 // ================================
 // RANDOM LEGAL BOARD
 // ================================
@@ -103,15 +127,7 @@ function createRandomPorts() {
 ];
 
 
-    const types = [
-        "3:1","3:1","3:1","3:1",
-        "wood","brick","sheep","wheat","ore"
-    ];
-
-    for (let i = types.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [types[i], types[j]] = [types[j], types[i]];
-    }
+    const types = shuffle([...PORT_COUNTS]);
 
     return spots.map((spot, i) => ({
         ...spot,
@@ -124,7 +140,7 @@ function createRandomBoard() {
     const board = createBlankBoard();
 
     const resources = shuffle(buildResourcePool());
-    for (let i = 0; i < 19; i++) {
+    for (let i = 0; i < TILE_COUNT; i++) {
       board[i].type = resources[i];
       board[i].robber = resources[i] === "desert";
     }
@@ -133,7 +149,7 @@ function createRandomBoard() {
 
     let failed = false;
 
-    for (let i = 0; i < 19; i++) {
+    for (let i = 0; i < TILE_COUNT; i++) {
       if (board[i].type === "desert") continue;
 
       let placed = false;
@@ -172,7 +188,7 @@ function touchingHot(board, index) {
   const num = board[index].number;
   if (num !== 6 && num !== 8) return false;
 
-  for (let i = 0; i < board.length; i++) {
+  for (let i = 0; i < TILE_COUNT; i++) {
     if (i === index) continue;
 
     const other = board[i].number;
@@ -215,13 +231,25 @@ function setNumber(board, index, number) {
   return board;
 }
 
-function setPort(ports, side, type) {
-  const found = ports.find(p => p.side === side);
+function setPort(ports, q, r, side, type) {
+    const index = ports.findIndex(p =>
+        p.q === q &&
+        p.r === r &&
+        p.side === side
+    );
 
-  if (found) found.type = type;
-  else ports.push({ side, type });
+    if (!type) {
+        if (index !== -1) ports.splice(index, 1);
+        return ports;
+    }
 
-  return ports;
+    if (index !== -1) {
+        ports[index].type = type;
+    } else {
+        ports.push({ q, r, side, type });
+    }
+
+    return ports;
 }
 
 // ================================
@@ -229,7 +257,7 @@ function setPort(ports, side, type) {
 // ================================
 
 function validateBoard(board) {
-  if (!board || board.length !== 19) {
+  if (!board || board.length !== TILE_COUNT) {
     return { ok:false, error:"Board must contain 19 tiles." };
   }
 
@@ -243,7 +271,7 @@ function validateBoard(board) {
   for (let i = 0; i < board.length; i++) {
     const tile = board[i];
 
-    if (!resource.hasOwnProperty(tile.type)) {
+    if (!Object.prototype.hasOwnProperty.call(resource, tile.type)) {
       return { ok:false, error:"Invalid resource type." };
     }
 
@@ -295,12 +323,25 @@ function validateBoard(board) {
 
   return { ok:true };
 }
-
 module.exports = {
-  createRandomBoard,
-  createRandomPorts,
-  cycleTile,
-  setNumber,
-  setPort,
-  validateBoard
+    RESOURCE_COUNTS,
+    NUMBER_COUNTS,
+    PORT_COUNTS,
+    POSITIONS,
+
+    createRandomBoard,
+    createRandomPorts,
+    createBlankBoard,
+
+    adjacent,
+    buildResourcePool,
+    buildNumberPool,
+    touchingHot,
+
+    cycleTile,
+    setNumber,
+    setPort,
+
+    validateBoard,
+    validatePorts
 };

@@ -1,7 +1,7 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-
+const Board = require("./game/board");
 const GameRoom = require("./game/game");
 const Board = require("./game/board");
 
@@ -50,39 +50,6 @@ function runAITurn(room) {
         }, 2500);
 
     }, 1000);
-}function validatePorts(ports) {
-    if (ports.length !== 9) return "Need 9 ports.";
-
-    const seen = new Set();
-
-    const count = {
-        "3:1":0,
-        wood:0,
-        brick:0,
-        sheep:0,
-        wheat:0,
-        ore:0
-    };
-
-    for (const p of ports) {
-        const key = `${p.q},${p.r},${p.side}`;
-
-        if (seen.has(key)) return "Duplicate port position.";
-        seen.add(key);
-
-        if (!(p.type in count)) return "Invalid port type.";
-
-        count[p.type]++;
-    }
-
-    if (count["3:1"] !== 4) return "Need 4x 3:1";
-    if (count.wood !== 1) return "Need wood port";
-    if (count.brick !== 1) return "Need brick port";
-    if (count.sheep !== 1) return "Need sheep port";
-    if (count.wheat !== 1) return "Need wheat port";
-    if (count.ore !== 1) return "Need ore port";
-
-    return null;
 }
 
 
@@ -311,13 +278,7 @@ socket.on("setPort", ({ q, r, side, type }) => {
     const room = requireRoom(socket);
     if (!requireHost(socket, room)) return;
 
-    room.ports = room.ports.filter(p =>
-        !(p.q === q && p.r === r && p.side === side)
-    );
-
-    if (type) {
-        room.ports.push({ q, r, side, type });
-    }
+    Board.setPort(room.ports, q, r, side, type);
 
     emitBoard(room);
 });
@@ -335,7 +296,7 @@ socket.on("setPort", ({ q, r, side, type }) => {
     }
 
     // port validation
-    const portError = validatePorts(room.ports || []);
+    const portError = Board.validatePorts(room.ports);
 
     if (portError) {
         socket.emit("setupError", portError);
@@ -410,7 +371,7 @@ io.to(room.code).emit("diceRolled", roll);
   io.to(room.code).emit("needDiceRoll");
 emitTurn(room);
 
-runAITurn(room);;
+runAITurn(room);
 });
 socket.on("rollDice", () => {
 
@@ -441,7 +402,23 @@ socket.on("rollDice", () => {
         emitRoom(room);
         emitBoard(room);
     });
+socket.on("placeSettlement", data => {
+    const room = requireRoom(socket);
+    if (!room) return;
 
+    room.placeSettlement(socket.id, data.q, data.r, data.corner);
+
+    io.to(room.code).emit("settlementsUpdate", room.settlements);
+});
+
+socket.on("placeRoad", data => {
+    const room = requireRoom(socket);
+    if (!room) return;
+
+    room.placeRoad(socket.id, data.q, data.r, data.side);
+
+    io.to(room.code).emit("roadsUpdate", room.roads);
+});
 });
 
 // =====================================

@@ -20,7 +20,7 @@ function shuffle(array) {
 // =====================
 
 function generateRoomCode(length = 4) {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let code = "";
 
     for (let i = 0; i < length; i++) {
@@ -42,12 +42,12 @@ function clamp(value, min, max) {
 // ARRAY UTILS
 // =====================
 
-function removeFromArray(array, callback) {
-    const index = array.findIndex(callback);
-    if (index !== -1) {
-        return array.splice(index, 1)[0]; // return removed item
-    }
-    return null;
+function removeFromArray(array, predicate) {
+    const index = array.findIndex(predicate);
+    return index === -1 ? null : array.splice(index, 1)[0];
+}
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 // =====================
@@ -63,8 +63,14 @@ function deepCopy(obj) {
 // =====================
 
 function rollDice() {
-    return Math.floor(Math.random() * 6 + 1) +
-           Math.floor(Math.random() * 6 + 1);
+    const die1 = randomInt(1, 6);
+const die2 = randomInt(1, 6);
+
+    return {
+        die1,
+        die2,
+        total: die1 + die2
+    };
 }
 
 module.exports = {

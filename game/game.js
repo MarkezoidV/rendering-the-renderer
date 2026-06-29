@@ -1,6 +1,5 @@
 const Player = require("./player");
-const { shuffle } = require("../utils/helpers");
-const { rollDice } = require("../utils/helpers");
+const { shuffle, rollDice } = require("../utils/helpers");
 class GameRoom {
     constructor(code) {
         this.code = code;
@@ -21,6 +20,9 @@ this.roads = [];
             turnMode: "random",
             victoryPoints: 10
         };
+        this.phase = "setup"; // setup -> play -> gameover
+this.setupRound = 1;
+this.setupDirection = 1;
     }
 
     // =========================
@@ -57,7 +59,7 @@ addPlayer(id, name, isAI = false) {
         const player = this.players.find(p => p.id === id);
         if (!player || player.isAI) return;
 
-        player.ready = !player.ready;
+        player.toggleReady();
     }
 
     addAI() {
@@ -86,6 +88,11 @@ canStart() {
 }
 start() {
     this.started = true;
+
+    this.phase = "setup";
+    this.setupRound = 1;
+    this.setupDirection = 1;
+
     this.turn = 0;
 
     if (this.settings.turnMode === "random") {
@@ -95,36 +102,60 @@ start() {
     return this.startTurn();
 }
 startTurn() {
-    const die1 = Math.floor(Math.random() * 6) + 1;
-    const die2 = Math.floor(Math.random() * 6) + 1;
-
-    this.lastRoll = {
-        die1,
-        die2,
-        total: die1 + die2
-    };
-
+    this.lastRoll = rollDice();
     return this.lastRoll;
 }
-    reset() {
-        this.started = false;
-        this.turn = 0;
+reset() {
+    this.started = false;
+    this.turn = 0;
 
-        this.players.forEach(p => {
-    p.reset();
-    if (p.isAI) p.ready = true;
-});
-    }
+    this.phase = "setup";
+    this.setupRound = 1;
+    this.setupDirection = 1;
+
+    this.settlements = [];
+    this.roads = [];
+    this.lastRoll = null;
+
+    this.players.forEach(p => {
+        p.reset();
+
+        if (p.isAI) {
+            p.toggleReady();
+        }
+    });
+}
 getPlayer(id) {
     return this.players.find(p => p.id === id);
 }
     nextTurn() {
-        this.turn = (this.turn + 1) % this.players.length;
-    }
+    if (!this.players.length) return;
+    this.turn = (this.turn + 1) % this.players.length;
+}
 
     currentPlayer() {
-        return this.players[this.turn];
-    }
+    if (this.players.length === 0) return null;
+    return this.players[this.turn];
+}
+
+
+getSettlement(q, r, corner) {
+    return this.settlements.find(s =>
+        s.q === q &&
+        s.r === r &&
+        s.corner === corner
+    );
+}
+
+getRoad(q, r, side) {
+    return this.roads.find(rd =>
+        rd.q === q &&
+        rd.r === r &&
+        rd.side === side
+    );
+}
+
+
 
 shufflePlayers() {
     this.players = shuffle(this.players);
@@ -161,6 +192,50 @@ shufflePlayers() {
     isFull() {
         return this.players.length >= 4;
     }
+placeSettlement(playerId, q, r, corner) {
+    const player = this.getPlayer(playerId);
+    if (!player) return false;
+
+    if (this.getSettlement(q, r, corner))
+        return false;
+
+    // more validation goes here
+
+    const settlement = {
+        playerId,
+        q,
+        r,
+        corner,
+        city: false
+    };
+
+    this.settlements.push(settlement);
+    player.addSettlement(settlement);
+
+    return true;
+}
+
+placeRoad(playerId, q, r, side) {
+    const player = this.getPlayer(playerId);
+    if (!player) return false;
+
+    if (this.getRoad(q, r, side))
+        return false;
+
+    // more validation goes here
+
+    const road = {
+        playerId,
+        q,
+        r,
+        side
+    };
+
+    this.roads.push(road);
+    player.addRoad(road);
+
+    return true;
+}
 }
 
 module.exports = GameRoom;
